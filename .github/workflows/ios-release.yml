@@ -23,8 +23,6 @@ jobs:
         run: |
           DEVICE_ID="$(python3 Scripts/select_simulator.py)"
           echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
-          xcrun simctl boot "$DEVICE_ID" || true
-          xcrun simctl bootstatus "$DEVICE_ID" -b
       - name: Run full simulator suite
         run: |
           set -o pipefail
@@ -34,7 +32,9 @@ jobs:
             -resultBundlePath artifacts/LiveCueTests.xcresult CODE_SIGNING_ALLOWED=NO \
             | tee artifacts/xcodebuild.log
       - if: always()
-        run: xcrun simctl io "${{ steps.simulator.outputs.device_id }}" screenshot artifacts/final-screen.png || true
+        run: |
+          xcrun simctl boot "${{ steps.simulator.outputs.device_id }}" || true
+          xcrun simctl io "${{ steps.simulator.outputs.device_id }}" screenshot artifacts/final-screen.png || true
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -100,4 +100,3 @@ jobs:
           shasum -a 256 -c LiveCue.ipa.sha256
           unzip -t LiveCue.ipa
           unzip -l LiveCue.ipa | grep -q 'Payload/LiveCue.app/LiveCue'
-
