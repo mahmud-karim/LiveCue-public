@@ -15,7 +15,7 @@ final class WhisperTranscriber: ObservableObject {
     private var knownConfirmedCount = 0
     var onFinalSegments: (([LiveCueCore.TranscriptSegment]) -> Void)?
 
-    static let catalog: [TranscriptionModel] = [
+    static let catalog: [LiveCueCore.TranscriptionModel] = [
         .init(variant: "openai_whisper-tiny.en", displayName: "Tiny English", approximateMegabytes: 75, quality: "Fastest; useful for testing", recommended: false),
         .init(variant: "openai_whisper-base.en", displayName: "Base English", approximateMegabytes: 145, quality: "Balanced speed and accuracy", recommended: true),
         .init(variant: "openai_whisper-small.en", displayName: "Small English", approximateMegabytes: 465, quality: "More accurate; slower", recommended: false),
@@ -23,7 +23,7 @@ final class WhisperTranscriber: ObservableObject {
         .init(variant: "openai_whisper-large-v3-v20240930_626MB", displayName: "Large v3", approximateMegabytes: 626, quality: "Best accuracy; heaviest", recommended: false)
     ]
 
-    func prepare(model: TranscriptionModel) async throws {
+    func prepare(model: LiveCueCore.TranscriptionModel) async throws {
         status = "Downloading \(model.displayName)…"
         let base = try modelBaseDirectory()
         let config = WhisperKitConfig(
@@ -74,7 +74,7 @@ final class WhisperTranscriber: ObservableObject {
         status = installedVariant == nil ? "No model loaded" : "Ready"
     }
 
-    func remove(model: TranscriptionModel) throws {
+    func remove(model: LiveCueCore.TranscriptionModel) throws {
         stop()
         kit = nil
         let base = try modelBaseDirectory()
