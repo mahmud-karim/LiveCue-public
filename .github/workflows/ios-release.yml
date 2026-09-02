@@ -72,7 +72,8 @@ jobs:
           ditto "$APP_PATH" "$PACKAGE_ROOT/Payload/LiveCue.app"
           ditto -c -k --sequesterRsrc --keepParent "$PACKAGE_ROOT/Payload" "$IPA_PATH"
           unzip -t "$IPA_PATH"
-          shasum -a 256 "$IPA_PATH" | tee "$IPA_PATH.sha256"
+          cd "$GITHUB_WORKSPACE"
+          shasum -a 256 LiveCue.ipa | tee LiveCue.ipa.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: livecue-device-build
@@ -86,9 +87,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          gh release create "$RELEASE_TAG" LiveCue.ipa LiveCue.ipa.sha256 \
-            --target "$GITHUB_SHA" --title "LiveCue $RELEASE_TAG" \
-            --notes "Unsigned iPhoneOS IPA for personal use through LiveContainer. Simulator tests passed before this build."
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" LiveCue.ipa LiveCue.ipa.sha256 --clobber
+            gh release edit "$RELEASE_TAG" --target "$GITHUB_SHA" --title "LiveCue $RELEASE_TAG" \
+              --notes "Unsigned iPhoneOS IPA for personal use through LiveContainer. Simulator tests passed before this build."
+          else
+            gh release create "$RELEASE_TAG" LiveCue.ipa LiveCue.ipa.sha256 \
+              --target "$GITHUB_SHA" --title "LiveCue $RELEASE_TAG" \
+              --notes "Unsigned iPhoneOS IPA for personal use through LiveContainer. Simulator tests passed before this build."
+          fi
       - name: Re-download and verify published release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -96,7 +103,7 @@ jobs:
         run: |
           mkdir "$RUNNER_TEMP/release-check"
           cd "$RUNNER_TEMP/release-check"
-          gh release download "$RELEASE_TAG" --pattern 'LiveCue.ipa*'
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'LiveCue.ipa*'
           shasum -a 256 -c LiveCue.ipa.sha256
           unzip -t LiveCue.ipa
           unzip -l LiveCue.ipa | grep -q 'Payload/LiveCue.app/LiveCue'
