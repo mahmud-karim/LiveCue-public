@@ -120,6 +120,14 @@ public struct TranscriptionModel: Codable, Identifiable, Equatable, Sendable {
     public var approximateMegabytes: Int
     public var quality: String
     public var recommended: Bool
+
+    public init(variant: String, displayName: String, approximateMegabytes: Int, quality: String, recommended: Bool) {
+        self.variant = variant
+        self.displayName = displayName
+        self.approximateMegabytes = approximateMegabytes
+        self.quality = quality
+        self.recommended = recommended
+    }
 }
 
 public struct BenchmarkResult: Codable, Identifiable, Equatable, Sendable {
@@ -134,4 +142,3 @@ public struct BenchmarkResult: Codable, Identifiable, Equatable, Sendable {
         self.id = id; self.modelVariant = modelVariant; self.createdAt = createdAt; self.audioSeconds = audioSeconds; self.processingSeconds = processingSeconds; self.wordErrorRate = wordErrorRate; self.transcript = transcript
     }
 }
-
