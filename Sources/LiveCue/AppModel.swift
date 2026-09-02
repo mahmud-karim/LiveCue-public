@@ -75,7 +75,9 @@ final class AppModel: ObservableObject {
 
     func startSession() async {
         guard selectedModel != nil else { errorMessage = "Choose and download a transcription model first."; return }
-        let granted = isUITesting || await AVAudioApplication.requestRecordPermission()
+        let granted: Bool
+        if isUITesting { granted = true }
+        else { granted = await AVAudioApplication.requestRecordPermission() }
         guard granted else { errorMessage = "Microphone permission is required for live transcription."; return }
         activeSession = Session()
         latestAnswer = nil
@@ -143,4 +145,3 @@ final class AppModel: ObservableObject {
         try? repository.save(current)
     }
 }
-
