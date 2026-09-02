@@ -91,7 +91,7 @@ final class WhisperTranscriber: ObservableObject {
             LiveCueCore.TranscriptSegment(text: $0.text, startSeconds: Double($0.start), endSeconds: Double($0.end), isFinal: true)
         }
         knownConfirmedCount = state.confirmedSegments.count
-        onFinalSegments(Array(new))
+        onFinalSegments?(Array(new))
     }
 
     private func modelBaseDirectory() throws -> URL {
