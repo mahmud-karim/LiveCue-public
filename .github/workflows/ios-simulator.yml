@@ -1,0 +1,56 @@
+name: iOS simulator tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: livecue-simulator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Xcode
+        run: xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Choose and boot simulator
+        id: simulator
+        run: |
+          DEVICE_ID="$(python3 Scripts/select_simulator.py)"
+          echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+      - name: Build and run unit plus UI tests
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          xcodebuild test \
+            -project LiveCue.xcodeproj \
+            -scheme LiveCue \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}" \
+            -resultBundlePath artifacts/LiveCueTests.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee artifacts/xcodebuild.log
+      - name: Capture final simulator screen
+        if: always()
+        run: |
+          mkdir -p artifacts
+          xcrun simctl io "${{ steps.simulator.outputs.device_id }}" screenshot artifacts/final-screen.png || true
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: livecue-test-evidence
+          path: artifacts
+          if-no-files-found: warn
+          retention-days: 14
+

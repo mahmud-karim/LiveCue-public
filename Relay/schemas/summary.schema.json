@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "summary", "keyPoints", "actionItems"],
+  "properties": {
+    "title": { "type": "string" },
+    "summary": { "type": "string" },
+    "keyPoints": { "type": "array", "items": { "type": "string" } },
+    "actionItems": { "type": "array", "items": { "type": "string" } }
+  }
+}
+

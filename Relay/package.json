@@ -1,0 +1,16 @@
+{
+  "name": "livecue-relay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "reset-pairing": "node --experimental-strip-types src/index.ts --reset-pairing",
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  },
+  "dependencies": {
+    "qrcode-terminal": "0.12.0"
+  }
+}
+

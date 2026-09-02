@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+DerivedData/
+LiveCue.xcodeproj/
+Relay/node_modules/
+Relay/coverage/
+*.xcresult
+*.ipa
+*.sha256
+

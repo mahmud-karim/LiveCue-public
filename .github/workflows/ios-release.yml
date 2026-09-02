@@ -1,0 +1,103 @@
+name: Test and build LiveContainer IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to create
+        required: true
+        default: v0.1.0
+
+permissions:
+  contents: write
+
+jobs:
+  simulator-test:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - id: simulator
+        run: |
+          DEVICE_ID="$(python3 Scripts/select_simulator.py)"
+          echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+      - name: Run full simulator suite
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          xcodebuild test -project LiveCue.xcodeproj -scheme LiveCue \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}" \
+            -resultBundlePath artifacts/LiveCueTests.xcresult CODE_SIGNING_ALLOWED=NO \
+            | tee artifacts/xcodebuild.log
+      - if: always()
+        run: xcrun simctl io "${{ steps.simulator.outputs.device_id }}" screenshot artifacts/final-screen.png || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: livecue-release-test-evidence
+          path: artifacts
+          retention-days: 14
+
+  build-and-release:
+    needs: simulator-test
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: Build unsigned iPhone app
+        run: |
+          set -o pipefail
+          xcodebuild build -project LiveCue.xcodeproj -scheme LiveCue -configuration Release \
+            -sdk iphoneos -destination "generic/platform=iOS" \
+            -derivedDataPath "$RUNNER_TEMP/LiveCueDerivedData" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            | tee "$RUNNER_TEMP/LiveCue-device-build.log"
+      - name: Package and validate IPA
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/LiveCueDerivedData/Build/Products/Release-iphoneos/LiveCue.app"
+          PACKAGE_ROOT="$RUNNER_TEMP/LiveCuePackage"
+          IPA_PATH="$GITHUB_WORKSPACE/LiveCue.ipa"
+          test -d "$APP_PATH"
+          test -f "$APP_PATH/LiveCue"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")" = "com.mahmudkarim.LiveCue"
+          file "$APP_PATH/LiveCue" | grep -q arm64
+          mkdir -p "$PACKAGE_ROOT/Payload"
+          ditto "$APP_PATH" "$PACKAGE_ROOT/Payload/LiveCue.app"
+          ditto -c -k --sequesterRsrc --keepParent "$PACKAGE_ROOT/Payload" "$IPA_PATH"
+          unzip -t "$IPA_PATH"
+          shasum -a 256 "$IPA_PATH" | tee "$IPA_PATH.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: livecue-device-build
+          path: |
+            LiveCue.ipa
+            LiveCue.ipa.sha256
+            ${{ runner.temp }}/LiveCue-device-build.log
+          retention-days: 14
+      - name: Create private GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          gh release create "$RELEASE_TAG" LiveCue.ipa LiveCue.ipa.sha256 \
+            --target "$GITHUB_SHA" --title "LiveCue $RELEASE_TAG" \
+            --notes "Unsigned iPhoneOS IPA for personal use through LiveContainer. Simulator tests passed before this build."
+      - name: Re-download and verify published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          mkdir "$RUNNER_TEMP/release-check"
+          cd "$RUNNER_TEMP/release-check"
+          gh release download "$RELEASE_TAG" --pattern 'LiveCue.ipa*'
+          shasum -a 256 -c LiveCue.ipa.sha256
+          unzip -t LiveCue.ipa
+          unzip -l LiveCue.ipa | grep -q 'Payload/LiveCue.app/LiveCue'
+
