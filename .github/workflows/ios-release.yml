@@ -38,6 +38,7 @@ jobs:
         run: |
           xcrun simctl boot "${{ steps.simulator.outputs.device_id }}" || true
           xcrun simctl io "${{ steps.simulator.outputs.device_id }}" screenshot artifacts/final-screen.png || true
+          xcrun xcresulttool export attachments --path artifacts/LiveCueTests.xcresult --output-path artifacts/screenshots || true
       - if: always()
         uses: actions/upload-artifact@v4
         with:
