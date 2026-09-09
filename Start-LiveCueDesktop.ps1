@@ -5,8 +5,15 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 [xml]$layout = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Desktop.xaml')
 $window = [Windows.Markup.XamlReader]::Load((New-Object Xml.XmlNodeReader $layout))
 $ui = @{}
-foreach ($name in 'StartButton','StopButton','PauseButton','ClearButton','Status','PhoneStatus','QRCanvas','QRHint','PairButton','HideQRButton','Endpoint','Activity','Transcript','Reply','ResponseTime','TranscriptHint','ShowPairButton','PairingExpander','BrandIcon') { $ui[$name] = $window.FindName($name) }
+foreach ($name in 'StartButton','StopButton','PauseButton','ClearButton','Status','PhoneStatus','QRCanvas','QRHint','PairButton','HideQRButton','Endpoint','Activity','Transcript','Reply','ResponseTime','TranscriptHint','ShowPairButton','PairingPanel','BrandIcon','PhoneDot','PairFooterButton','ClosePairButton','ActivityPanel','ShowActivityButton','CloseActivityButton','MinimizeButton','MaximizeButton','CloseButton') { $ui[$name] = $window.FindName($name) }
 $ui.BrandIcon.Source = [Windows.Media.Imaging.BitmapFrame]::Create([uri](Join-Path $PSScriptRoot 'Assets/LiveCue.png'))
+$ui.TranscriptLayout = $window.FindName('TranscriptLayout')
+$ui.ReplyLayout = $window.FindName('ReplyLayout')
+$window.Add_SizeChanged({
+    $window.UpdateLayout()
+    $ui.Transcript.MaxHeight = [Math]::Max(36, $ui.TranscriptLayout.RowDefinitions[1].ActualHeight - 130)
+    $ui.Reply.MaxHeight = [Math]::Max(36, $ui.ReplyLayout.RowDefinitions[1].ActualHeight - 88)
+})
 $window.Icon = [Windows.Media.Imaging.BitmapFrame]::Create([uri](Join-Path $PSScriptRoot 'Assets/LiveCue.ico'))
 $script:relayProcess = $null
 $script:readTask = $null
@@ -30,7 +37,9 @@ function Stop-Relay {
         $script:relayProcess.Dispose(); $script:relayProcess = $null
     }
     $script:readTask = $null; $script:errorTask = $null; $script:lastSeen = $null
-    $ui.Status.Text = 'Relay stopped'; $ui.PhoneStatus.Text = 'Phone: relay stopped'
+    $ui.Status.Text = 'Stopped'; $ui.PhoneStatus.Text = 'iPhone not connected'
+    $ui.PhoneDot.Fill = '#A1B1C8'
+    $ui.StartButton.Visibility = 'Visible'; $ui.PauseButton.Visibility = 'Collapsed'
     $ui.StartButton.IsEnabled = $true
     $ui.StopButton.IsEnabled = $false; $ui.PauseButton.IsEnabled = $false; $ui.PairButton.IsEnabled = $false
     $ui.QRCanvas.Children.Clear(); $script:qrShownAt = $null
@@ -39,19 +48,20 @@ function Handle-Event($event) {
     switch ($event.type) {
         'ready' {
             $ui.StartButton.IsEnabled = $false
-            $ui.Status.Text = 'Relay ready - accepting requests'; $ui.Endpoint.Text = [string]$event.endpoint
+            $ui.Status.Text = 'Ready'; $ui.Endpoint.Text = [string]$event.endpoint
+            $ui.StartButton.Visibility = 'Collapsed'; $ui.PauseButton.Visibility = 'Visible'
             $ui.StopButton.IsEnabled = $true; $ui.PauseButton.IsEnabled = $true; $ui.PairButton.IsEnabled = $true
-            $script:paused = $false; $ui.PauseButton.Content = 'Pause requests'
+            $script:paused = $false; $ui.PauseButton.Content = 'Pause relay'
             Add-Activity 'Relay started. Waiting for your iPhone.'
         }
-        'phone-seen' { $script:lastSeen = Get-Date; $ui.PhoneStatus.Text = 'iPhone connected' }
+        'phone-seen' { $script:lastSeen = Get-Date; $ui.PhoneStatus.Text = 'iPhone connected'; $ui.PhoneDot.Fill = '#35B665' }
         'state' {
             $script:paused = -not [bool]$event.accepting
-            if ($script:paused) { $ui.Status.Text = 'Relay paused - new requests blocked'; $ui.PauseButton.Content = 'Resume requests' }
-            else { $ui.Status.Text = 'Relay ready - accepting requests'; $ui.PauseButton.Content = 'Pause requests' }
+            if ($script:paused) { $ui.Status.Text = 'Paused'; $ui.PauseButton.Content = 'Resume relay' }
+            else { $ui.Status.Text = 'Ready'; $ui.PauseButton.Content = 'Pause relay' }
         }
         'pairing' {
-            $ui.PairingExpander.IsExpanded = $true
+            $ui.PairingPanel.Visibility = 'Visible'
             $ui.QRCanvas.Children.Clear()
             $count = $event.modules.Count; $cell = 240.0 / ($count + 8)
             for ($row = 0; $row -lt $count; $row++) { for ($col = 0; $col -lt $count; $col++) {
@@ -67,7 +77,7 @@ function Handle-Event($event) {
             $ui.Endpoint.Text = [string]$event.endpoint
         }
         'request' {
-            $ui.Status.Text = 'Processing with Codex...'
+            $ui.Status.Text = 'Thinking...'
             $ui.Transcript.Text = [string]$event.payload.transcript
             if ($event.payload.partialTranscript) { $ui.Transcript.Text += "`r`n`r`n[In progress] " + [string]$event.payload.partialTranscript }
             if ($event.payload.instruction) { $ui.Transcript.Text += "`r`n`r`nInstruction: " + [string]$event.payload.instruction }
@@ -85,7 +95,7 @@ function Handle-Event($event) {
             if ($event.payload.actionItems) { $ui.Reply.Text += "`r`n`r`nAction items`r`n" + ($event.payload.actionItems -join "`r`n") }
             if (-not $ui.Reply.Text) { $ui.Reply.Text = ($event.payload | ConvertTo-Json -Depth 16) }
             $ui.ResponseTime.Text = 'Sent to iPhone  /  ' + ([Math]::Round($event.durationMs / 1000.0, 2)) + ' s'
-            $ui.Status.Text = if ($script:paused) { 'Relay paused' } else { 'Reply sent - ready' }
+            $ui.Status.Text = if ($script:paused) { 'Paused' } else { 'Ready' }
             Add-Activity ("REPLY [" + $event.requestId + '] ' + ([Math]::Round($event.durationMs / 1000.0, 2)) + " s`r`n" + ($event.payload | ConvertTo-Json -Depth 16))
         }
         'request-error' { $ui.Status.Text = 'Request failed - ready to retry'; $ui.Reply.Text = [string]$event.message; $ui.ResponseTime.Text = 'Not sent - try Assist again'; Add-Activity ([string]$event.message) }
@@ -118,7 +128,16 @@ $ui.StartButton.Add_Click({ Start-Relay })
 $ui.StopButton.Add_Click({ Stop-Relay })
 $ui.PauseButton.Add_Click({ Send-Control @{action='pause'; paused=(-not $script:paused)} })
 $ui.ClearButton.Add_Click({ $ui.Activity.Clear(); $ui.Transcript.Clear(); $ui.Reply.Clear(); $ui.ResponseTime.Text = 'Activity cleared' })
-$ui.ShowPairButton.Add_Click({ $ui.PairingExpander.IsExpanded = -not $ui.PairingExpander.IsExpanded })
+$ui.ShowPairButton.Add_Click({ $ui.PairingPanel.Visibility = 'Visible' })
+$ui.PairFooterButton.Add_Click({ $ui.PairingPanel.Visibility = 'Visible' })
+$ui.ClosePairButton.Add_Click({ $ui.PairingPanel.Visibility = 'Collapsed' })
+$ui.ShowActivityButton.Add_Click({ $ui.ActivityPanel.Visibility = 'Visible' })
+$ui.CloseActivityButton.Add_Click({ $ui.ActivityPanel.Visibility = 'Collapsed' })
+$ui.MinimizeButton.Add_Click({ $window.WindowState = 'Minimized' })
+$ui.MaximizeButton.Add_Click({ $window.WindowState = if ($window.WindowState -eq 'Maximized') { 'Normal' } else { 'Maximized' } })
+$ui.CloseButton.Add_Click({ $window.Close() })
+$window.Add_KeyDown({ if ($_.Key -eq 'Escape') { $ui.PairingPanel.Visibility = 'Collapsed'; $ui.ActivityPanel.Visibility = 'Collapsed' } })
+$ui.Status.SetBinding([Windows.FrameworkElement]::ToolTipProperty, (New-Object Windows.Data.Binding 'Text' -Property @{Source=$ui.Status})) | Out-Null
 $ui.HideQRButton.Add_Click({ $ui.QRCanvas.Children.Clear(); $script:qrShownAt = $null; $ui.QRHint.Text = 'QR hidden. Existing pairing remains valid.' })
 $ui.PairButton.Add_Click({
     if ([Windows.MessageBox]::Show('Generate a new QR? This invalidates the previous pairing token. Re-pair your iPhone afterward.', 'Replace pairing', 'YesNo', 'Question') -eq 'Yes') { Send-Control @{action='pair'} }
@@ -141,13 +160,16 @@ $timer.Add_Tick({
         if ($script:relayProcess -and $script:relayProcess.HasExited -and -not $script:readTask) {
             $ui.StartButton.IsEnabled = $true; $ui.StopButton.IsEnabled = $false; $ui.PauseButton.IsEnabled = $false; $ui.PairButton.IsEnabled = $false
             $ui.QRCanvas.Children.Clear(); $script:lastSeen = $null
-            $ui.PhoneStatus.Text = 'Phone: relay stopped'
+            $ui.PhoneStatus.Text = 'iPhone not connected'; $ui.PhoneDot.Fill = '#A1B1C8'
+            $ui.StartButton.Visibility = 'Visible'; $ui.PauseButton.Visibility = 'Collapsed'
             if ($ui.Status.Text -notmatch 'port|failed|Could not') { $ui.Status.Text = 'Relay stopped - click Start relay to reconnect' }
             $script:relayProcess.Dispose(); $script:relayProcess = $null
         }
         if ($script:lastSeen) {
             $age = [int]((Get-Date) - $script:lastSeen).TotalSeconds
-            $ui.PhoneStatus.Text = if ($age -le 15) { 'iPhone connected' } else { "iPhone last seen $age seconds ago" }
+            $ui.PhoneStatus.Text = if ($age -le 15) { 'iPhone connected' } else { 'iPhone idle' }
+            $ui.PhoneStatus.ToolTip = "Last authenticated heartbeat: $age seconds ago"
+            $ui.PhoneDot.Fill = if ($age -le 15) { '#35B665' } else { '#D9A23E' }
         }
         if ($script:qrShownAt -and ((Get-Date) - $script:qrShownAt).TotalSeconds -gt 120) { $ui.QRCanvas.Children.Clear(); $script:qrShownAt = $null; $ui.QRHint.Text = 'QR hidden for privacy. Existing pairing remains valid.' }
     } catch { $ui.Status.Text = 'Desktop connection interrupted. Stop and restart the relay.' }
@@ -164,7 +186,7 @@ if ($SelfTest) {
     Handle-Event ([pscustomobject]@{type='state';accepting=$false})
     if (-not $script:paused) { throw 'Pause state failed' }
     Handle-Event ([pscustomobject]@{type='state';accepting=$true})
-    $ui.PairingExpander.IsExpanded = [bool]$TestExpanded
+    $ui.PairingPanel.Visibility = if ($TestExpanded) { 'Visible' } else { 'Collapsed' }
     if ($TestExpanded) { $window.Width = 900; $window.Height = 650 }
     $window.Show(); $window.UpdateLayout()
     if ($EvidencePath) {
