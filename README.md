@@ -1,6 +1,6 @@
 # LiveCue
 
-LiveCue is a private, personal iPhone conversation assistant built for a Windows development workflow. Two tabs compare local transcription: **Voz on Assist** records in memory and transcribes on demand; **Live Parakeet** produces continuous captions. Both send only text context through Tailscale to Codex CLI on the owner's Windows PC.
+LiveCue is a personal iPhone conversation assistant with public source code and a private Windows relay. Two tabs compare local transcription: **Voz on Assist** records in memory and transcribes on demand; **Live Parakeet** produces continuous captions. Both send only text context through Tailscale to Codex CLI on the owner's Windows PC.
 
 Requires iOS 18 or later. End the current conversation before switching tabs, then prepare that tab's model (downloads are cached). Voz shows audio duration and transcription wall time; Parakeet shows the last buffer's processing time, not end-to-end caption latency. Simulator UI tests use fixtures: real model speed and microphone behavior must be compared on the iPhone. The vendor's 10-minute/2-second claim is not a measured LiveCue result.
 
@@ -24,6 +24,8 @@ The relay binds only to `127.0.0.1`; `tailscale serve` exposes it as private HTT
 `project.yml` is the XcodeGen source of truth. GitHub's macOS runner generates the Xcode project, dynamically selects an available iPhone simulator, runs unit and UI tests, captures test evidence, then separately builds an unsigned ARM64 iPhoneOS app. The release job packages `Payload/LiveCue.app` as `LiveCue.ipa`, publishes it to the private GitHub release, re-downloads it, and verifies its checksum and structure.
 
 The IPA is intended for LiveContainer. It is not signed for direct installation and is not an App Store/TestFlight build.
+
+Public development repository: https://github.com/mahmud-karim/LiveCue-public. Public builds use standard GitHub-hosted macOS runners. Never commit pairing payloads, local logs, credentials, or personal conversation data. Pairing is generated locally; publishing this source does not expose a running relay or grant access to it. The two-tab version is experimental and still requires a successful iOS build and physical-device validation.
 
 ## Architecture
 

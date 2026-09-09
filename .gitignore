@@ -8,3 +8,22 @@ Relay/coverage/
 *.ipa
 *.sha256
 
+# Local credentials, pairing data, logs, and recordings must never be published.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.mobileprovision
+relay.json
+pairing*.json
+auth.json
+*.log
+*.wav
+*.m4a
+*.caf
+*.sqlite
+*.sqlite-*
+*.bundle
+artifacts/
