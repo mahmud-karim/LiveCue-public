@@ -15,12 +15,14 @@ final class LiveCueUITests: XCTestCase {
         app.swipeUp()
         app.buttons["timing-disclosure"].tap()
         app.swipeUp()
-        XCTAssertTrue(app.staticTexts["PC: Codex CLI call"].waitForExistence(timeout: 5))
+        // LabeledContent exposes its label and value together to accessibility.
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "PC: Codex CLI call,")).firstMatch.waitForExistence(timeout: 5))
         let timing = XCTAttachment(screenshot: app.screenshot()); timing.name = "Response timing breakdown"; timing.lifetime = .keepAlways; add(timing)
         app.swipeUp()
         XCTAssertTrue(app.buttons["retry-same-text"].exists)
         app.buttons["retry-same-text"].tap()
-        XCTAssertTrue(app.staticTexts["Transcription (reused)"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Transcription (reused),")).firstMatch.waitForExistence(timeout: 5))
+        let retry = XCTAttachment(screenshot: app.screenshot()); retry.name = "Same-text retry timing"; retry.lifetime = .keepAlways; add(retry)
     }
     func testConversationAndAssistFlow() {
         let app = XCUIApplication()
