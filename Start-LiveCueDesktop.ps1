@@ -1,48 +1,13 @@
 [CmdletBinding()]
-param([switch]$SelfTest, [string]$EvidencePath, [switch]$AutoStart)
+param([switch]$SelfTest, [string]$EvidencePath, [switch]$AutoStart, [switch]$TestExpanded)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
-[xml]$layout = @'
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="LiveCue Desktop" Width="1120" Height="790" MinWidth="900" MinHeight="650" Background="#101724" Foreground="#EDF2FA" WindowStartupLocation="CenterScreen">
- <Window.Resources>
-  <Style TargetType="Button"><Setter Property="Padding" Value="15,9"/><Setter Property="Margin" Value="0,0,8,8"/><Setter Property="Background" Value="#364966"/><Setter Property="Foreground" Value="White"/><Setter Property="BorderThickness" Value="0"/></Style>
-  <Style TargetType="TextBox"><Setter Property="Background" Value="#172236"/><Setter Property="Foreground" Value="#EDF2FA"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="12"/><Setter Property="IsReadOnly" Value="True"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="VerticalScrollBarVisibility" Value="Auto"/></Style>
- </Window.Resources>
- <Grid Margin="24">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <StackPanel><TextBlock Text="LiveCue Desktop" FontSize="29" FontWeight="Bold"/><TextBlock Text="Your private iPhone-to-PC assistant" Foreground="#AABBD5" Margin="0,5,0,18"/></StackPanel>
-  <StackPanel Grid.Row="1">
-   <WrapPanel><Button x:Name="StartButton" Content="Start relay"/><Button x:Name="StopButton" Content="Stop relay" IsEnabled="False"/><Button x:Name="PauseButton" Content="Pause requests" IsEnabled="False"/><Button x:Name="ClearButton" Content="Clear activity"/></WrapPanel>
-   <TextBlock x:Name="Status" Text="Relay stopped" FontSize="16" Margin="0,3,0,5"/>
-   <TextBlock x:Name="PhoneStatus" Text="Phone: not seen yet" Foreground="#AABBD5" Margin="0,0,0,16"/>
-  </StackPanel>
-  <Grid Grid.Row="2">
-   <Grid.ColumnDefinitions><ColumnDefinition Width="300"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-   <Border Background="#172236" CornerRadius="12" Padding="16">
-    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
-     <TextBlock Text="Pair your iPhone" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,12"/>
-     <Border Background="White" Padding="8"><Viewbox Width="240" Height="240"><Canvas x:Name="QRCanvas" Width="240" Height="240" Background="White"/></Viewbox></Border>
-     <TextBlock x:Name="QRHint" Text="Existing pairing stays valid. Generate a new QR only if you need to pair again." TextWrapping="Wrap" Foreground="#AABBD5" Margin="0,12,0,12"/>
-     <Button x:Name="PairButton" Content="Generate new pairing QR" IsEnabled="False"/>
-     <Button x:Name="HideQRButton" Content="Hide QR"/>
-     <TextBlock Text="PC address" Foreground="#AABBD5" Margin="0,10,0,4"/>
-     <TextBox x:Name="Endpoint" MaxHeight="72"/>
-     <TextBlock Text="Codex: gpt-5.6-sol / low reasoning" Foreground="#AABBD5" TextWrapping="Wrap" Margin="0,12,0,0"/>
-    </StackPanel></ScrollViewer>
-   </Border>
-   <Grid Grid.Column="2">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-    <TextBlock Text="Live activity - transcript in / answer out" FontSize="18" Margin="0,0,0,10"/>
-    <TextBox x:Name="Activity" Grid.Row="1" FontFamily="Consolas" FontSize="13" Text="Start the relay, then tap Assist on your iPhone."/>
-   </Grid>
-  </Grid>
-  <TextBlock Grid.Row="3" Text="Activity stays in memory only. Closing this window stops its relay. Keep the pairing QR private." Foreground="#AABBD5" Margin="0,16,0,0" TextWrapping="Wrap"/>
- </Grid>
-</Window>
-'@
+[xml]$layout = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Desktop.xaml')
 $window = [Windows.Markup.XamlReader]::Load((New-Object Xml.XmlNodeReader $layout))
 $ui = @{}
-foreach ($name in 'StartButton','StopButton','PauseButton','ClearButton','Status','PhoneStatus','QRCanvas','QRHint','PairButton','HideQRButton','Endpoint','Activity') { $ui[$name] = $window.FindName($name) }
+foreach ($name in 'StartButton','StopButton','PauseButton','ClearButton','Status','PhoneStatus','QRCanvas','QRHint','PairButton','HideQRButton','Endpoint','Activity','Transcript','Reply','ResponseTime','TranscriptHint','ShowPairButton','PairingExpander','BrandIcon') { $ui[$name] = $window.FindName($name) }
+$ui.BrandIcon.Source = [Windows.Media.Imaging.BitmapFrame]::Create([uri](Join-Path $PSScriptRoot 'Assets/LiveCue.png'))
+$window.Icon = [Windows.Media.Imaging.BitmapFrame]::Create([uri](Join-Path $PSScriptRoot 'Assets/LiveCue.ico'))
 $script:relayProcess = $null
 $script:readTask = $null
 $script:errorTask = $null
@@ -79,13 +44,14 @@ function Handle-Event($event) {
             $script:paused = $false; $ui.PauseButton.Content = 'Pause requests'
             Add-Activity 'Relay started. Waiting for your iPhone.'
         }
-        'phone-seen' { $script:lastSeen = Get-Date }
+        'phone-seen' { $script:lastSeen = Get-Date; $ui.PhoneStatus.Text = 'iPhone connected' }
         'state' {
             $script:paused = -not [bool]$event.accepting
             if ($script:paused) { $ui.Status.Text = 'Relay paused - new requests blocked'; $ui.PauseButton.Content = 'Resume requests' }
             else { $ui.Status.Text = 'Relay ready - accepting requests'; $ui.PauseButton.Content = 'Pause requests' }
         }
         'pairing' {
+            $ui.PairingExpander.IsExpanded = $true
             $ui.QRCanvas.Children.Clear()
             $count = $event.modules.Count; $cell = 240.0 / ($count + 8)
             for ($row = 0; $row -lt $count; $row++) { for ($col = 0; $col -lt $count; $col++) {
@@ -102,13 +68,27 @@ function Handle-Event($event) {
         }
         'request' {
             $ui.Status.Text = 'Processing with Codex...'
+            $ui.Transcript.Text = [string]$event.payload.transcript
+            if ($event.payload.partialTranscript) { $ui.Transcript.Text += "`r`n`r`n[In progress] " + [string]$event.payload.partialTranscript }
+            if ($event.payload.instruction) { $ui.Transcript.Text += "`r`n`r`nInstruction: " + [string]$event.payload.instruction }
+            if (-not $ui.Transcript.Text) { $ui.Transcript.Text = ($event.payload | ConvertTo-Json -Depth 16) }
+            $ui.TranscriptHint.Text = if ($event.kind -eq 'summary') { 'Session summary requested' } else { 'Received from your iPhone' }
+            $ui.Reply.Text = 'Thinking...'
+            $ui.ResponseTime.Text = 'Processing with Codex on your PC'
             Add-Activity ("INCOMING " + $event.kind + ' [' + $event.requestId + "]`r`n" + ($event.payload | ConvertTo-Json -Depth 16))
         }
         'reply' {
+            $ui.Reply.Text = [string]$event.payload.answer
+            if (-not $ui.Reply.Text) { $ui.Reply.Text = [string]$event.payload.summary }
+            if ($event.payload.details) { $ui.Reply.Text += "`r`n`r`n" + [string]$event.payload.details }
+            if ($event.payload.keyPoints) { $ui.Reply.Text += "`r`n`r`nKey points`r`n" + ($event.payload.keyPoints -join "`r`n") }
+            if ($event.payload.actionItems) { $ui.Reply.Text += "`r`n`r`nAction items`r`n" + ($event.payload.actionItems -join "`r`n") }
+            if (-not $ui.Reply.Text) { $ui.Reply.Text = ($event.payload | ConvertTo-Json -Depth 16) }
+            $ui.ResponseTime.Text = 'Sent to iPhone  /  ' + ([Math]::Round($event.durationMs / 1000.0, 2)) + ' s'
             $ui.Status.Text = if ($script:paused) { 'Relay paused' } else { 'Reply sent - ready' }
             Add-Activity ("REPLY [" + $event.requestId + '] ' + ([Math]::Round($event.durationMs / 1000.0, 2)) + " s`r`n" + ($event.payload | ConvertTo-Json -Depth 16))
         }
-        'request-error' { $ui.Status.Text = 'Request failed - ready to retry'; Add-Activity ([string]$event.message) }
+        'request-error' { $ui.Status.Text = 'Request failed - ready to retry'; $ui.Reply.Text = [string]$event.message; $ui.ResponseTime.Text = 'Not sent - try Assist again'; Add-Activity ([string]$event.message) }
         'fatal' { $ui.Status.Text = [string]$event.message; Add-Activity ([string]$event.message) }
         'notice' { Add-Activity ([string]$event.message) }
     }
@@ -137,7 +117,8 @@ function Start-Relay {
 $ui.StartButton.Add_Click({ Start-Relay })
 $ui.StopButton.Add_Click({ Stop-Relay })
 $ui.PauseButton.Add_Click({ Send-Control @{action='pause'; paused=(-not $script:paused)} })
-$ui.ClearButton.Add_Click({ $ui.Activity.Clear() })
+$ui.ClearButton.Add_Click({ $ui.Activity.Clear(); $ui.Transcript.Clear(); $ui.Reply.Clear(); $ui.ResponseTime.Text = 'Activity cleared' })
+$ui.ShowPairButton.Add_Click({ $ui.PairingExpander.IsExpanded = -not $ui.PairingExpander.IsExpanded })
 $ui.HideQRButton.Add_Click({ $ui.QRCanvas.Children.Clear(); $script:qrShownAt = $null; $ui.QRHint.Text = 'QR hidden. Existing pairing remains valid.' })
 $ui.PairButton.Add_Click({
     if ([Windows.MessageBox]::Show('Generate a new QR? This invalidates the previous pairing token. Re-pair your iPhone afterward.', 'Replace pairing', 'YesNo', 'Question') -eq 'Yes') { Send-Control @{action='pair'} }
@@ -166,7 +147,7 @@ $timer.Add_Tick({
         }
         if ($script:lastSeen) {
             $age = [int]((Get-Date) - $script:lastSeen).TotalSeconds
-            $ui.PhoneStatus.Text = if ($age -le 15) { 'Phone: active (authenticated heartbeat)' } else { "Phone: last seen $age seconds ago - app may be backgrounded" }
+            $ui.PhoneStatus.Text = if ($age -le 15) { 'iPhone connected' } else { "iPhone last seen $age seconds ago" }
         }
         if ($script:qrShownAt -and ((Get-Date) - $script:qrShownAt).TotalSeconds -gt 120) { $ui.QRCanvas.Children.Clear(); $script:qrShownAt = $null; $ui.QRHint.Text = 'QR hidden for privacy. Existing pairing remains valid.' }
     } catch { $ui.Status.Text = 'Desktop connection interrupted. Stop and restart the relay.' }
@@ -178,7 +159,13 @@ if ($SelfTest) {
     Handle-Event ([pscustomobject]@{type='phone-seen'})
     Handle-Event ([pscustomobject]@{type='request';kind='assist';requestId='demo';payload=@{transcript='What is the advantage of local transcription?'}})
     Handle-Event ([pscustomobject]@{type='reply';requestId='demo';durationMs=850;payload=@{answer='Your audio stays on your phone.'}})
-    if ($ui.Activity.Text -notmatch 'Your audio stays' -or -not $ui.PairButton.IsEnabled) { throw 'Desktop self-test failed' }
+    if ($ui.Activity.Text -notmatch 'Your audio stays' -or -not $ui.PairButton.IsEnabled -or $ui.Reply.Text -notmatch 'Your audio stays' -or $ui.Transcript.Text -notmatch 'advantage' -or $ui.ResponseTime.Text -notmatch '0.85') { throw 'Desktop self-test failed' }
+    if ($ui.QRCanvas.Children.Count -eq 0) { throw 'Pairing QR was not rendered' }
+    Handle-Event ([pscustomobject]@{type='state';accepting=$false})
+    if (-not $script:paused) { throw 'Pause state failed' }
+    Handle-Event ([pscustomobject]@{type='state';accepting=$true})
+    $ui.PairingExpander.IsExpanded = [bool]$TestExpanded
+    if ($TestExpanded) { $window.Width = 900; $window.Height = 650 }
     $window.Show(); $window.UpdateLayout()
     if ($EvidencePath) {
         $bitmap = New-Object Windows.Media.Imaging.RenderTargetBitmap ([int]$window.ActualWidth),([int]$window.ActualHeight),96,96,([Windows.Media.PixelFormats]::Pbgra32)
@@ -187,6 +174,8 @@ if ($SelfTest) {
         $encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap))
         $file = [IO.File]::Create($EvidencePath); try { $encoder.Save($file) } finally { $file.Dispose() }
     }
+    $ui.ClearButton.RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Button]::ClickEvent)))
+    if ($ui.Transcript.Text -or $ui.Reply.Text -or $ui.Activity.Text) { throw 'Clear activity did not clear all text views' }
     $window.Close(); Write-Output 'Desktop self-test passed'; exit 0
 }
 $timer.Start()
