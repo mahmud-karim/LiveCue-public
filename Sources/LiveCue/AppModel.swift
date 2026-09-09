@@ -185,6 +185,11 @@ final class AppModel: ObservableObject {
                 response = AssistResponse(detectedQuestion: "What is the main advantage of local transcription?", answer: "Your audio stays on the iPhone, which improves privacy and keeps transcription working without a cloud speech service.", details: "Only the text context is sent through your private Tailscale connection to the Codex relay on your PC.", memory: SessionMemory(summary: "Discussing local transcription privacy.", throughSegmentId: current.segments.last?.id))
                 response.execution = RelayExecution(model: configuration.model, reasoningEffort: configuration.reasoningEffort, codexMs: 600, relayTotalMs: 620, requestReadMs: 2, relayOverheadMs: 20)
             } else { response = try await relay.assist(request, endpoint: endpoint, token: token) }
+            guard let execution = response.execution,
+                  execution.model == configuration.model,
+                  execution.reasoningEffort == configuration.reasoningEffort else {
+                throw RelayError.server("The PC did not confirm the selected model. Restart the updated LiveCue Desktop app, then retry.")
+            }
             let roundTripMs = isUITesting ? 680 : (ProcessInfo.processInfo.systemUptime - roundTripStarted) * 1000
             let metrics = AssistPerformance(configuration: configuration, speechModel: mode, reusedText: reuseText, transcriptionMs: sttMs, contextMs: contextMs, roundTripMs: roundTripMs, totalMs: isUITesting ? 700 : (ProcessInfo.processInfo.systemUptime - totalStarted) * 1000, lastLiveChunkMs: mode == "parakeet" ? transcriber.lastLiveChunkMs : nil, transcriptCharacters: request.transcript.count + (request.partialTranscript?.count ?? 0), execution: response.execution)
             let turn = AssistantTurn(request: request.instruction, detectedQuestion: response.detectedQuestion, answer: response.answer, details: response.details, performance: metrics)

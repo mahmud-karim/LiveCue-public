@@ -100,6 +100,10 @@ function Handle-Event($event) {
             if ($event.payload.actionItems) { $ui.Reply.Text += "`r`n`r`nAction items`r`n" + ($event.payload.actionItems -join "`r`n") }
             if (-not $ui.Reply.Text) { $ui.Reply.Text = ($event.payload | ConvertTo-Json -Depth 16) }
             $ui.ResponseTime.Text = 'Sent to iPhone  /  ' + ([Math]::Round($event.durationMs / 1000.0, 2)) + ' s'
+            if ($event.payload.execution) {
+                $ui.ResponseTime.Text = [string]$event.payload.execution.model + ' / ' + [string]$event.payload.execution.reasoningEffort + ' / ' + ([Math]::Round($event.payload.execution.codexMs / 1000.0, 2)) + ' s Codex'
+                $ui.ResponseTime.ToolTip = 'PC relay total: ' + ([Math]::Round($event.payload.execution.relayTotalMs / 1000.0, 3)) + ' s. Codex includes startup and cloud processing.'
+            }
             $ui.Status.Text = if ($script:paused) { 'Paused' } else { 'Ready' }
             Add-Activity ("REPLY [" + $event.requestId + '] ' + ([Math]::Round($event.durationMs / 1000.0, 2)) + " s`r`n" + ($event.payload | ConvertTo-Json -Depth 16))
         }
