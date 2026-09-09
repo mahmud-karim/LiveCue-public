@@ -9,6 +9,11 @@ foreach ($name in 'StartButton','StopButton','PauseButton','ClearButton','Status
 $ui.BrandIcon.Source = [Windows.Media.Imaging.BitmapFrame]::Create([uri](Join-Path $PSScriptRoot 'Assets/LiveCue.png'))
 $ui.TranscriptLayout = $window.FindName('TranscriptLayout')
 $ui.ReplyLayout = $window.FindName('ReplyLayout')
+$ui.QRPlaceholder = $window.FindName('QRPlaceholder')
+$window.Add_LayoutUpdated({
+    $ui.QRPlaceholder.Visibility = if ($ui.QRCanvas.Children.Count) { 'Collapsed' } else { 'Visible' }
+    $ui.QRCanvas.Background = if ($ui.QRCanvas.Children.Count) { [Windows.Media.Brushes]::White } else { [Windows.Media.Brushes]::Transparent }
+})
 $window.Add_SizeChanged({
     $window.UpdateLayout()
     $ui.Transcript.MaxHeight = [Math]::Max(36, $ui.TranscriptLayout.RowDefinitions[1].ActualHeight - 130)
