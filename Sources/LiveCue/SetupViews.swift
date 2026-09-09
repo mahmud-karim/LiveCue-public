@@ -40,11 +40,11 @@ struct ModelLibraryView: View {
     var body: some View {
         List {
             Section {
-                Text("Models are downloaded from the official Argmax WhisperKit Core ML repository and run entirely on this iPhone. No model is bundled in the IPA.")
+                Text("Prepare the model for this tab once. The download is cached on your iPhone. Initial preparation can take longer than subsequent loads.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             Section("English models") {
-                ForEach(WhisperTranscriber.catalog) { item in
+                ForEach(ComparisonTranscriber.catalog.filter { $0.variant == model.mode }) { item in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             VStack(alignment: .leading) {
@@ -60,7 +60,7 @@ struct ModelLibraryView: View {
                                 Task { await model.selectAndPrepare(item); workingVariant = nil }
                             }.buttonStyle(.borderedProminent).disabled(workingVariant != nil)
                             if model.selectedModelVariant == item.variant {
-                                Button("Delete", role: .destructive) { model.remove(item) }.buttonStyle(.bordered)
+                                Button("Unload") { model.remove(item) }.buttonStyle(.bordered)
                             }
                             if workingVariant == item.variant { ProgressView() }
                         }
@@ -68,8 +68,8 @@ struct ModelLibraryView: View {
                 }
             }
             Section("Pinned source") {
-                LabeledContent("Package", value: "argmax-oss-swift 1.1.0")
-                LabeledContent("Models", value: "argmaxinc/whisperkit-coreml")
+                Text(model.transcriber.status)
+                LabeledContent("Package", value: model.mode == "voz" ? "Desert Ant 3.1.0" : "FluidAudio 0.15.6")
             }
         }.navigationTitle("Model Library")
     }
@@ -124,4 +124,3 @@ struct ModelLabView: View {
         }.navigationTitle("Model Lab")
     }
 }
-

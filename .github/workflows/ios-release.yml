@@ -11,6 +11,9 @@ on:
 permissions:
   contents: write
 
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+
 jobs:
   simulator-test:
     runs-on: macos-15

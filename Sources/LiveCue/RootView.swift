@@ -5,18 +5,31 @@ struct RootView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if model.activeSession != nil { LiveSessionView() }
-                else { HomeView() }
+        TabView(selection: Binding(get: { model.mode }, set: { newMode in
+            guard newMode != model.mode else { return }
+            guard model.activeSession == nil, !model.isPreparing else {
+                model.errorMessage = "Finish the current session or model preparation before switching tabs."; return
             }
-            .navigationTitle(model.activeSession == nil ? "LiveCue" : "Live session")
-            .toolbarBackground(.visible, for: .navigationBar)
+            model.mode = newMode
+        })) {
+            modePage.tabItem { Label("Voz on Assist", systemImage: "sparkles") }.tag("voz")
+            modePage.tabItem { Label("Live Parakeet", systemImage: "waveform") }.tag("parakeet")
         }
         .tint(.indigo)
         .alert("LiveCue", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
+    }
+
+    private var modePage: some View {
+        NavigationStack {
+            Group {
+                if model.activeSession != nil { LiveSessionView() }
+                else { HomeView() }
+            }
+            .navigationTitle(model.mode == "voz" ? "Voz on Assist" : "Live Parakeet")
+            .toolbarBackground(.visible, for: .navigationBar)
+        }
     }
 }
 
@@ -36,8 +49,8 @@ struct HomeView: View {
             VStack(spacing: 18) {
                 VStack(spacing: 10) {
                     Image(systemName: "waveform.and.mic").font(.system(size: 54)).foregroundStyle(.indigo)
-                    Text("A private conversation copilot").font(.title2.bold())
-                    Text("Audio is transcribed on your iPhone. Only the text you choose is sent to Codex on your PC.")
+                    Text(model.mode == "voz" ? "Record. Tap Assist. Get an answer." : "See the conversation as you speak.").font(.title2.bold())
+                    Text(model.mode == "voz" ? "Voz transcribes your recorded audio on this iPhone when you tap Assist. Only text is sent to your PC." : "Parakeet transcribes continuously on this iPhone. Tap Assist to send the current text to your PC.")
                         .multilineTextAlignment(.center).foregroundStyle(.secondary)
                     StatusPill(online: model.relayOnline)
                 }.padding(.vertical, 18)
@@ -92,8 +105,9 @@ struct LiveSessionView: View {
                     }.padding().background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("LIVE TRANSCRIPT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        if model.activeSession?.segments.isEmpty != false { Text("Listening for speech…").foregroundStyle(.secondary) }
+                        Text(model.mode == "voz" ? "TRANSCRIPT" : "LIVE TRANSCRIPT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        if !model.transcriber.timing.isEmpty { Text(model.transcriber.timing).font(.caption).foregroundStyle(.secondary) }
+                        if model.activeSession?.segments.isEmpty != false { Text(model.mode == "voz" ? "Recording locally. Tap Assist to transcribe." : "Listening for speech…").foregroundStyle(.secondary) }
                         ForEach(model.activeSession?.segments ?? []) { segment in Text(segment.text).frame(maxWidth: .infinity, alignment: .leading) }
                         if !model.transcriber.partialText.isEmpty { Text(model.transcriber.partialText).foregroundStyle(.secondary).italic() }
                         Color.clear.frame(height: 1).id("bottom")
@@ -115,12 +129,12 @@ struct LiveSessionView: View {
             VStack(spacing: 10) {
                 TextField("Optional instruction (e.g. answer briefly)", text: $model.instruction).textFieldStyle(.roundedBorder)
                 HStack {
-                    Button { Task { await model.togglePause() } } label: { Image(systemName: model.isPaused ? "play.fill" : "pause.fill").frame(width: 42, height: 42) }.buttonStyle(.bordered)
+                    Button { Task { await model.togglePause() } } label: { Image(systemName: model.isPaused ? "play.fill" : "pause.fill").frame(width: 42, height: 42) }.buttonStyle(.bordered).disabled(model.isAssisting || model.isTransitioning)
                     Button { Task { await model.assist() } } label: {
-                        if model.isAssisting { ProgressView().frame(maxWidth: .infinity) }
+                        if model.isAssisting { HStack { ProgressView(); Text(model.assistStage) }.frame(maxWidth: .infinity) }
                         else { Label("Assist", systemImage: "sparkles").frame(maxWidth: .infinity) }
-                    }.buttonStyle(.borderedProminent).controlSize(.large).disabled(model.isAssisting || model.isPaused).accessibilityIdentifier("assist-button")
-                    Button(role: .destructive) { Task { await model.endSession() } } label: { Image(systemName: "stop.fill").frame(width: 42, height: 42) }.buttonStyle(.bordered)
+                    }.buttonStyle(.borderedProminent).controlSize(.large).disabled(model.isAssisting || model.isTransitioning).accessibilityIdentifier("assist-button")
+                    Button(role: .destructive) { Task { await model.endSession() } } label: { Image(systemName: "stop.fill").frame(width: 42, height: 42) }.buttonStyle(.bordered).disabled(model.isAssisting || model.isTransitioning).accessibilityIdentifier("end-session")
                 }
             }.padding().background(.ultraThinMaterial)
         }
@@ -132,4 +146,3 @@ private struct AudioMeter: View {
     let level: Float
     var body: some View { HStack(spacing: 2) { ForEach(0..<4) { index in Capsule().fill(Float(index) / 4 < min(1, abs(level) * 10) ? .green : .gray.opacity(0.3)).frame(width: 3, height: CGFloat(8 + index * 4)) } } }
 }
-
