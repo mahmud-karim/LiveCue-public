@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { randomUUID } from "node:crypto";
 import { CodexRunner } from "./codex.ts";
 import { bearerToken, verifyToken } from "./security.ts";
+import { modelCatalog, validateSelection } from "./models.ts";
 
 const maxBodyBytes = 128 * 1024;
 
@@ -12,6 +13,7 @@ export function createLiveCueServer(tokenHash: string | (() => string), runner =
   return createServer(async (request, response) => {
     setSecurityHeaders(response);
     let trackedId: string | undefined;
+    const receivedAt = performance.now();
     const expectedHash = typeof tokenHash === "function" ? tokenHash() : tokenHash;
     try {
       authenticate(request, expectedHash);
@@ -20,19 +22,30 @@ export function createLiveCueServer(tokenHash: string | (() => string), runner =
         return json(response, 200, { ok: true });
       }
       if (request.method === "POST" && request.url === "/v1/pair/verify") return json(response, 200, { ok: true });
+      if (request.method === "GET" && request.url === "/v1/models") return json(response, 200, { models: await modelCatalog() });
       if (request.method === "POST" && (request.url === "/v1/assist" || request.url === "/v1/session-summary")) {
         if (controls.accepting?.() === false) throw new HttpError(503, "PC relay is paused. Resume it in LiveCue Desktop.");
         if (busy) throw new HttpError(429, "The PC is processing another request. Try again shortly.");
         busy = true;
         try {
         const body = await readJson(request);
+        const requestReadMs = performance.now() - receivedAt;
+        let selection;
+        try { selection = validateSelection(body.assistant, await modelCatalog()); }
+        catch (error) { throw new HttpError(400, (error as Error).message); }
         const kind = request.url === "/v1/assist" ? "assist" : "summary";
         const requestId = kind === "assist" ? validateRequestId(body) : randomUUID();
         trackedId = requestId;
-        const started = Date.now();
+        const started = performance.now();
         controls.emit?.({ type: "request", requestId, kind, time: new Date().toISOString(), payload: body });
-        const result = await runner.run(requestId, kind, body);
-        controls.emit?.({ type: "reply", requestId, kind, durationMs: Date.now() - started, payload: result });
+        const answer = await runner.run(requestId, kind, body, 60_000, selection);
+        const codexMs = performance.now() - started;
+        const relayTotalMs = performance.now() - receivedAt;
+        const result = { ...(answer as object), execution: {
+          ...selection, codexMs, relayTotalMs, requestReadMs,
+          relayOverheadMs: Math.max(0, relayTotalMs - codexMs)
+        } };
+        controls.emit?.({ type: "reply", requestId, kind, durationMs: relayTotalMs, payload: result });
         return json(response, 200, result);
         } finally { busy = false; }
       }

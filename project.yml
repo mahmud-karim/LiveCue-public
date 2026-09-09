@@ -51,6 +51,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mahmudkarim.LiveCue
         PRODUCT_NAME: LiveCue
+        MARKETING_VERSION: "0.4.0"
+        CURRENT_PROJECT_VERSION: "4"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Manual
         CODE_SIGNING_ALLOWED: NO

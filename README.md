@@ -43,3 +43,12 @@ Public development repository: https://github.com/mahmud-karim/LiveCue-public. P
 ## Current v1 boundaries
 
 English only, no speaker diarization, no TTS, no invisible overlay, no lock-screen control, and no arbitrary third-party model source. Background microphone capture uses iOS audio background mode, but iOS can still interrupt recording for calls, route changes, or system policy.
+# Assistant model comparison (v0.4)
+
+On iPhone, open **Assistant models & timing** (or the model row during a conversation). Refresh the authenticated PC catalog, choose a model and supported reasoning level, then tap Assist. The selection also applies to session summaries. Models are sourced from the local Codex catalog; account access is confirmed only when a request succeeds. Service tier remains default.
+
+Each saved answer records its model, reasoning, STT mode, transcript character count, and timings. **Retry same text** reuses the exact previous text, instruction, and rolling context with a fresh request ID and your newly selected assistant settings. It does not retranscribe audio.
+
+Timing boundaries: iPhone monotonic tap-to-answer, pending STT after the tap, context preparation, full HTTP round trip; PC monotonic Codex CLI invocation and remaining relay overhead. CLI time includes startup, cloud work and output handling, not pure model inference. Round trip minus PC duration is a transfer/client-overhead estimate, not separate upload/download measurements. Live Parakeet processing occurs before the tap; its last chunk timing is shown separately. Old saved sessions remain readable.
+
+Restart the PC desktop after updating its source so the running relay exposes the new authenticated model catalog and timing fields. No pairing reset is needed.

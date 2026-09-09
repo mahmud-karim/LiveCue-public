@@ -11,6 +11,7 @@ final class ComparisonTranscriber: ObservableObject {
     @Published var partialText = ""
     @Published var energy: Float = 0
     @Published var timing = ""
+    @Published var lastLiveChunkMs: Double?
     @Published var preparationFraction: Double = 0
     @Published var preparationStarted: Date?
     @Published var preparationFinished: Date?
@@ -121,10 +122,11 @@ final class ComparisonTranscriber: ObservableObject {
                     guard let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(chunk.count)) else { continue }
                     pcm.frameLength = pcm.frameCapacity
                     chunk.withUnsafeBufferPointer { pcm.floatChannelData![0].update(from: $0.baseAddress!, count: chunk.count) }
-                    let started = Date()
+                    let started = ProcessInfo.processInfo.systemUptime
                     do {
                         _ = try await live.process(audioBuffer: pcm)
-                        self.timing = String(format: "Last buffer processing: %.0f ms", Date().timeIntervalSince(started) * 1000)
+                        self.lastLiveChunkMs = (ProcessInfo.processInfo.systemUptime - started) * 1000
+                        self.timing = String(format: "Last buffer processing: %.0f ms", self.lastLiveChunkMs ?? 0)
                     } catch { self.onError?(error.localizedDescription); self.stop(); break }
                 }
             }

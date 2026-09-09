@@ -80,6 +80,7 @@ struct HomeView: View {
                 NavigationLink { PairingView() } label: { SettingsRow(icon: "desktopcomputer", title: "Pair Windows PC", detail: model.isPaired ? "Configured" : "Required") }.accessibilityIdentifier("pair-pc")
                 NavigationLink { ModelLibraryView() } label: { SettingsRow(icon: "cpu", title: "Model Library", detail: "On-device speech models") }
                 NavigationLink { ModelLabView() } label: { SettingsRow(icon: "gauge.with.dots.needle.67percent", title: "Model Lab", detail: "Speed and accuracy benchmark") }
+                NavigationLink { AssistantLabView() } label: { SettingsRow(icon: "slider.horizontal.3", title: "Assistant models & timing", detail: model.assistantConfiguration.model) }.accessibilityIdentifier("assistant-lab")
                 NavigationLink { HistoryView() } label: { SettingsRow(icon: "clock.arrow.circlepath", title: "History", detail: "\(model.sessions.count) saved sessions") }
             }.padding()
         }
@@ -102,6 +103,9 @@ struct LiveSessionView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 14) {
+                    NavigationLink { AssistantLabView() } label: {
+                        HStack { Label(model.assistantConfiguration.model, systemImage: "slider.horizontal.3"); Spacer(); Text(model.assistantConfiguration.reasoningEffort).font(.caption) }
+                    }.accessibilityIdentifier("assistant-lab").disabled(model.isAssisting)
                     HStack {
                         Circle().fill(model.isPaused ? .orange : .red).frame(width: 10)
                         Text(model.isPaused ? "Paused" : "Recording").font(.headline)
@@ -125,6 +129,13 @@ struct LiveSessionView: View {
                             Text(answer.answer).font(.title3.weight(.semibold)).accessibilityIdentifier("assistant-answer")
                             if showDetails { Divider(); Text(answer.details).foregroundStyle(.secondary) }
                             Button(showDetails ? "Hide detail" : "Expand detail") { showDetails.toggle() }
+                            if let metrics = answer.performance {
+                                DisclosureGroup("Timing · " + String(format: "%.2f s total", metrics.totalMs / 1000)) {
+                                    PerformanceView(metrics: metrics).padding(.top, 8)
+                                }.accessibilityIdentifier("timing-disclosure")
+                            }
+                            Button("Retry same text with selected model") { Task { await model.assist(reuseText: true) } }
+                                .disabled(model.isAssisting || model.lastAssistRequest == nil).accessibilityIdentifier("retry-same-text")
                         }.padding().frame(maxWidth: .infinity, alignment: .leading).background(.indigo.opacity(0.1), in: RoundedRectangle(cornerRadius: 16))
                     }
                 }.padding()

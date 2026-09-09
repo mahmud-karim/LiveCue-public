@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defaultSelection, type ModelSelection } from "./models.ts";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const schemaRoot = resolve(here, "..", "schemas");
@@ -10,7 +11,7 @@ const schemaRoot = resolve(here, "..", "schemas");
 export class CodexRunner {
   active = new Map<string, ReturnType<typeof spawn>>();
 
-  async run(requestId: string, kind: "assist" | "summary", payload: unknown, timeoutMs = 60_000): Promise<unknown> {
+  async run(requestId: string, kind: "assist" | "summary", payload: unknown, timeoutMs = 60_000, selection: ModelSelection = defaultSelection): Promise<unknown> {
     const work = await mkdtemp(join(tmpdir(), "livecue-"));
     const output = join(work, "output.json");
     const schema = join(schemaRoot, kind === "assist" ? "assist.schema.json" : "summary.schema.json");
@@ -19,7 +20,7 @@ export class CodexRunner {
     const args = [
       "exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check",
       "--sandbox", "read-only", "--disable", "shell_tool",
-      "-m", "gpt-5.6-sol", "-c", "model_reasoning_effort=\"low\"", "-c", "service_tier=\"default\"",
+      "-m", selection.model, "-c", "model_reasoning_effort=" + JSON.stringify(selection.reasoningEffort), "-c", "service_tier=\"default\"",
       "--output-schema", schema, "-o", output, "-C", work, "-"
     ];
     const child = spawn(executable, args, { cwd: work, stdio: ["pipe", "ignore", "ignore"], windowsHide: true, shell: false });

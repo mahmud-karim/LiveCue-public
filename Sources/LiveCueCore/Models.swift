@@ -37,14 +37,16 @@ public struct AssistantTurn: Codable, Identifiable, Equatable, Sendable {
     public var detectedQuestion: String
     public var answer: String
     public var details: String
+    public var performance: AssistPerformance?
 
-    public init(id: UUID = UUID(), createdAt: Date = .now, request: String? = nil, detectedQuestion: String, answer: String, details: String) {
+    public init(id: UUID = UUID(), createdAt: Date = .now, request: String? = nil, detectedQuestion: String, answer: String, details: String, performance: AssistPerformance? = nil) {
         self.id = id
         self.createdAt = createdAt
         self.request = request
         self.detectedQuestion = detectedQuestion
         self.answer = answer
         self.details = details
+        self.performance = performance
     }
 }
 
@@ -82,6 +84,7 @@ public struct Session: Codable, Identifiable, Equatable, Sendable {
 }
 
 public struct AssistRequest: Codable, Equatable, Sendable {
+    public var assistant: AssistantConfiguration?
     public var requestId: UUID
     public var sessionId: UUID
     public var instruction: String?
@@ -100,6 +103,7 @@ public struct AssistRequest: Codable, Equatable, Sendable {
 }
 
 public struct AssistResponse: Codable, Equatable, Sendable {
+    public var execution: RelayExecution?
     public var detectedQuestion: String
     public var answer: String
     public var details: String

@@ -16,6 +16,11 @@ enum RelayError: LocalizedError {
 actor RelayClient {
     private let session: URLSession
     init(session: URLSession = .shared) { self.session = session }
+    func models(endpoint: String, token: String) async throws -> [AssistantModelOption] {
+        struct Catalog: Decodable { var models: [AssistantModelOption] }
+        let catalog: Catalog = try await request(path: "/v1/models", method: "GET", endpoint: endpoint, token: token, body: Optional<String>.none)
+        return catalog.models
+    }
 
     func health(endpoint: String, token: String?) async throws -> Bool {
         let _: HealthResponse = try await request(path: "/v1/health", method: "GET", endpoint: endpoint, token: token, body: Optional<String>.none)
@@ -30,9 +35,9 @@ actor RelayClient {
         try await request(path: "/v1/assist", method: "POST", endpoint: endpoint, token: token, body: body)
     }
 
-    func summarize(session: Session, endpoint: String, token: String) async throws -> SummaryResponse {
-        struct SummaryBody: Codable { var sessionId: UUID; var transcript: String; var memory: SessionMemory }
-        let body = SummaryBody(sessionId: session.id, transcript: session.segments.map(\.text).joined(separator: "\n"), memory: session.memory)
+    func summarize(session: Session, endpoint: String, token: String, assistant: AssistantConfiguration) async throws -> SummaryResponse {
+        struct SummaryBody: Codable { var sessionId: UUID; var transcript: String; var memory: SessionMemory; var assistant: AssistantConfiguration }
+        let body = SummaryBody(sessionId: session.id, transcript: session.segments.map(\.text).joined(separator: "\n"), memory: session.memory, assistant: assistant)
         return try await request(path: "/v1/session-summary", method: "POST", endpoint: endpoint, token: token, body: body)
     }
 
@@ -57,4 +62,3 @@ actor RelayClient {
 
 private struct HealthResponse: Codable { var ok: Bool }
 private struct ErrorEnvelope: Codable { var error: String }
-
