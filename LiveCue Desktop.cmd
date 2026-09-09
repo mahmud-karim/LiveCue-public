@@ -1,2 +1,3 @@
 @echo off
-powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0Start-LiveCueDesktop.ps1"
+if not exist "%~dp0LiveCue Desktop.exe" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Build-LiveCueDesktop.ps1"
+start "" "%~dp0LiveCue Desktop.exe"

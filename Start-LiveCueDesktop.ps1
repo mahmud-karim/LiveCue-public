@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$SelfTest, [string]$EvidencePath)
+param([switch]$SelfTest, [string]$EvidencePath, [switch]$AutoStart)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 [xml]$layout = @'
@@ -73,6 +73,7 @@ function Stop-Relay {
 function Handle-Event($event) {
     switch ($event.type) {
         'ready' {
+            $ui.StartButton.IsEnabled = $false
             $ui.Status.Text = 'Relay ready - accepting requests'; $ui.Endpoint.Text = [string]$event.endpoint
             $ui.StopButton.IsEnabled = $true; $ui.PauseButton.IsEnabled = $true; $ui.PairButton.IsEnabled = $true
             $script:paused = $false; $ui.PauseButton.Content = 'Pause requests'
@@ -173,6 +174,8 @@ $timer.Add_Tick({
 $window.Add_Closed({ $timer.Stop(); Stop-Relay })
 if ($SelfTest) {
     Handle-Event ([pscustomobject]@{type='ready'; endpoint='https://demo.example.test/'})
+    Handle-Event ((& node (Join-Path $PSScriptRoot 'Relay\test\qr-fixture.cjs')) | ConvertFrom-Json)
+    Handle-Event ([pscustomobject]@{type='phone-seen'})
     Handle-Event ([pscustomobject]@{type='request';kind='assist';requestId='demo';payload=@{transcript='What is the advantage of local transcription?'}})
     Handle-Event ([pscustomobject]@{type='reply';requestId='demo';durationMs=850;payload=@{answer='Your audio stays on your phone.'}})
     if ($ui.Activity.Text -notmatch 'Your audio stays' -or -not $ui.PairButton.IsEnabled) { throw 'Desktop self-test failed' }
@@ -187,4 +190,5 @@ if ($SelfTest) {
     $window.Close(); Write-Output 'Desktop self-test passed'; exit 0
 }
 $timer.Start()
+if ($AutoStart) { $window.Add_ContentRendered({ Start-Relay }) }
 $null = $window.ShowDialog()

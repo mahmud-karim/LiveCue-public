@@ -27,3 +27,4 @@ auth.json
 *.sqlite-*
 *.bundle
 artifacts/
+LiveCue Desktop.exe
