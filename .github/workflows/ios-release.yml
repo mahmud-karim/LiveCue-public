@@ -26,12 +26,21 @@ jobs:
         run: |
           DEVICE_ID="$(python3 Scripts/select_simulator.py)"
           echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+      - name: Boot simulator before testing
+        timeout-minutes: 5
+        run: |
+          xcrun simctl boot "${{ steps.simulator.outputs.device_id }}" || true
+          xcrun simctl bootstatus "${{ steps.simulator.outputs.device_id }}" -b
       - name: Run full simulator suite
+        timeout-minutes: 20
         run: |
           set -o pipefail
           mkdir -p artifacts
           xcodebuild test -project LiveCue.xcodeproj -scheme LiveCue \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}" \
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES -default-test-execution-time-allowance 120 \
+            -maximum-test-execution-time-allowance 180 \
             -resultBundlePath artifacts/LiveCueTests.xcresult CODE_SIGNING_ALLOWED=NO \
             | tee artifacts/xcodebuild.log
       - if: always()
