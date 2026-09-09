@@ -2,6 +2,14 @@ import XCTest
 @testable import LiveCueCore
 
 final class LiveCueCoreTests: XCTestCase {
+    func testPairingQRValidation() throws {
+        let valid = "{\"endpoint\":\"https://pc.example.test/\",\"token\":\"fixture-token-1234567890\"}"
+        XCTAssertEqual(try PairingPayload.parse(valid).endpoint, "https://pc.example.test/")
+        XCTAssertThrowsError(try PairingPayload.parse(valid.replacingOccurrences(of: "https://", with: "http://")))
+        XCTAssertThrowsError(try PairingPayload.parse(valid.replacingOccurrences(of: "pc.example.test/", with: "user:pass@pc.example.test/")))
+        XCTAssertThrowsError(try PairingPayload.parse("not a pairing QR"))
+        XCTAssertThrowsError(try PairingPayload.parse(valid.replacingOccurrences(of: "fixture-token-1234567890", with: "short")))
+    }
     func testContextIncludesOverlapAndNewSegments() {
         let segments = (0..<6).map { TranscriptSegment(text: "segment \($0)", startSeconds: Double($0), endSeconds: Double($0 + 1)) }
         var session = Session(segments: segments)

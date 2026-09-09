@@ -35,6 +35,7 @@ targets:
         CFBundleDisplayName: LiveCue
         UILaunchScreen: {}
         NSMicrophoneUsageDescription: LiveCue records audio to transcribe conversations locally on this iPhone.
+        NSCameraUsageDescription: LiveCue scans the pairing QR code displayed on your Windows PC.
         NSLocalNetworkUsageDescription: LiveCue connects privately to your Windows PC over your Tailscale network.
         UIBackgroundModes:
           - audio

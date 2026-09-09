@@ -11,6 +11,11 @@ final class ComparisonTranscriber: ObservableObject {
     @Published var partialText = ""
     @Published var energy: Float = 0
     @Published var timing = ""
+    @Published var preparationFraction: Double = 0
+    @Published var preparationStarted: Date?
+    @Published var preparationFinished: Date?
+    @Published var preparationBytes = ""
+    private var preparationID: UUID?
     private var voz: Voz?
     private var live: StreamingEouAsrManager?
     private var variant = "voz"
@@ -27,21 +32,46 @@ final class ComparisonTranscriber: ObservableObject {
         .init(variant: "parakeet", displayName: "Live Parakeet", approximateMegabytes: 230, quality: "English live captions · 320 ms mode", recommended: true)
     ]
     func prepare(model: TranscriptionModel) async throws {
+        let preparation = UUID(); preparationID = preparation
+        preparationStarted = .now; preparationFinished = nil
+        preparationFraction = 0; preparationBytes = ""
+        defer { preparationID = nil; preparationFinished = .now }
         status = "Downloading and preparing \(model.displayName)…"
         variant = model.variant
         do {
             if variant == "voz" {
                 await live?.cleanup(); live = nil
-                if voz == nil { voz = try await Voz() }
+                if voz == nil {
+                    voz = try await Voz(progress: { [weak self] progress in
+                        Task { @MainActor in
+                            guard let self, self.preparationID == preparation else { return }
+                            self.preparationFraction = progress.fraction
+                            self.preparationBytes = "\(ByteCountFormatter.string(fromByteCount: progress.completedBytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: progress.totalBytes, countStyle: .file))"
+                            self.status = progress.fraction >= 1 ? "Download complete · preparing Neural Engine…" : "Downloading Voz…"
+                        }
+                    })
+                }
             } else {
                 voz = nil
                 if live == nil {
                     let config = MLModelConfiguration(); config.computeUnits = .cpuAndNeuralEngine
                     let manager = StreamingEouAsrManager(configuration: config, chunkSize: .ms320, eouDebounceMs: 640)
-                    try await manager.loadModels(); live = manager
+                    try await manager.loadModels(to: nil, configuration: nil, progressHandler: { [weak self] progress in
+                        Task { @MainActor in
+                            guard let self, self.preparationID == preparation else { return }
+                            self.preparationFraction = max(0, min(1, progress.fractionCompleted))
+                            switch progress.phase {
+                            case .listing: self.status = "Checking model files…"
+                            case .downloading(let completed, let total):
+                                self.status = "Downloading Parakeet…"
+                                self.preparationBytes = "\(completed) / \(total) files"
+                            case .compiling: self.status = "Download complete · preparing model…"
+                            }
+                        }
+                    }); live = manager
                 }
             }
-            status = "Ready"
+            preparationFraction = 1; status = "Ready"
         } catch { status = "Preparation failed"; throw error }
     }
     func start() async throws {

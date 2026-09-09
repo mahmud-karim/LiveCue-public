@@ -13,11 +13,17 @@ Always obtain the informed consent of everyone being recorded and follow local r
 1. Install and sign into Tailscale on the PC and iPhone.
 2. Confirm Codex CLI is signed into the ChatGPT subscription (`codex login status`).
 3. In `Relay`, run `npm install` once.
-4. Run `./Start-LiveCueRelay.ps1`. On first launch it prints a one-time pairing JSON payload and QR.
-5. In LiveCue, open **Pair Windows PC**, paste the JSON, and verify it.
+4. Double-click **LiveCue Desktop.cmd**, then click **Start relay**. Close an old relay terminal first if one is running. The desktop checks Codex/Tailscale and displays the PC endpoint.
+5. Click **Generate new pairing QR** if needed (this invalidates old pairing), then on iPhone open **Pair Windows PC → Scan PC QR code → Verify and pair**. Camera denial has a manual JSON fallback using the terminal launcher.
 6. Choose a tab, open **Model Library**, tap **Download & use**, go back, then start a conversation.
 
-The relay binds only to `127.0.0.1`; `tailscale serve` exposes it as private HTTPS inside the tailnet. To rotate the pairing token, run `./Start-LiveCueRelay.ps1 -ResetPairing`.
+The relay binds only to `127.0.0.1`; `tailscale serve` exposes it as private HTTPS inside the tailnet. To rotate the pairing token, use the desktop pairing button or run `./Start-LiveCueRelay.ps1 -ResetPairing`.
+
+## Windows companion
+
+The native WPF companion requires Windows PowerShell, Node.js 24+, Codex CLI, and Tailscale. Start/stop the relay, pause new requests, see recent authenticated phone activity, and inspect the exact incoming text context and returned answer. The phone sends a heartbeat every five seconds while the app is active; "last seen" does not prove the phone is offline when iOS backgrounds it. Closing the window stops its relay and cancels pending requests. Activity is bounded in memory and cleared on close; nothing is written to conversation logs. The QR hides after two minutes and is never sent to a remote QR service. Desktop control uses a private stdin/stdout pipe, not HTTP endpoints. The terminal launcher remains available.
+
+Model Library shows the SDK-reported download/setup percentage, byte/file counters, and elapsed time. Compilation/Neural Engine preparation may continue after the file download completes; this phase is not a promise of a fixed remaining time.
 
 ## Development and releases
 

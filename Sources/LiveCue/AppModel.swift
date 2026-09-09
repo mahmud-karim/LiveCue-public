@@ -53,6 +53,10 @@ final class AppModel: ObservableObject {
         var normalized = rawEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         if !normalized.hasSuffix("/") { normalized += "/" }
         do {
+            if !isUITesting {
+                let data = try JSONSerialization.data(withJSONObject: ["endpoint": normalized, "token": rawToken])
+                _ = try PairingPayload.parse(String(decoding: data, as: UTF8.self))
+            }
             if !isUITesting { try await relay.verify(endpoint: normalized, token: rawToken) }
             try KeychainStore.set(rawToken, account: "relayToken")
             endpoint = normalized
@@ -73,6 +77,12 @@ final class AppModel: ObservableObject {
         defer { isPreparing = false }
         do {
             if !isUITesting { try await transcriber.prepare(model: model) }
+            else {
+                transcriber.preparationStarted = .now; transcriber.preparationFinished = nil
+                transcriber.preparationFraction = 0.5; transcriber.status = "Downloading test fixture…"
+                try await Task.sleep(for: .seconds(2))
+                transcriber.preparationFraction = 1; transcriber.preparationFinished = .now; transcriber.status = "Ready"
+            }
             selectedModelVariant = model.variant
             UserDefaults.standard.set(model.variant, forKey: "selectedModel")
         } catch { errorMessage = error.localizedDescription }

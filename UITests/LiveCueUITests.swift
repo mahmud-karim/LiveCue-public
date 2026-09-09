@@ -17,6 +17,10 @@ final class LiveCueUITests: XCTestCase {
         app.tabBars.buttons["Live Parakeet"].tap()
         app.buttons["download-model"].tap()
         app.buttons["Download & use"].tap()
+        XCTAssertTrue(app.progressIndicators["model-download-progress"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Reload"].waitForExistence(timeout: 8))
+        let download = XCTAttachment(screenshot: app.screenshot())
+        download.name = "Download progress"; download.lifetime = .keepAlways; add(download)
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.buttons["start-session"].waitForExistence(timeout: 5))
         app.buttons["start-session"].tap()
@@ -24,5 +28,13 @@ final class LiveCueUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 10))
         let live = XCTAttachment(screenshot: app.screenshot())
         live.name = "Live Parakeet"; live.lifetime = .keepAlways; add(live)
+    }
+
+    func testPairingOffersQRScanner() {
+        let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
+        app.buttons["pair-pc"].tap()
+        XCTAssertTrue(app.buttons["scan-pairing-qr"].waitForExistence(timeout: 5))
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "QR pairing"; shot.lifetime = .keepAlways; add(shot)
     }
 }

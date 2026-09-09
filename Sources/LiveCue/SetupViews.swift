@@ -6,10 +6,12 @@ struct PairingView: View {
     @State private var endpoint = ""
     @State private var token = ""
     @State private var pairingPayload = ""
+    @State private var scanning = false
 
     var body: some View {
         Form {
             Section {
+                Button { scanning = true } label: { Label("Scan PC QR code", systemImage: "qrcode.viewfinder") }.accessibilityIdentifier("scan-pairing-qr")
                 Text("Start LiveCue Relay on Windows. Paste the pairing JSON shown by the launcher, or enter the values manually.")
                 TextEditor(text: $pairingPayload).frame(minHeight: 90).font(.caption.monospaced())
                 Button("Read pairing payload") { parsePayload() }
@@ -18,19 +20,33 @@ struct PairingView: View {
                 TextField("https://your-pc.tailnet.ts.net", text: $endpoint).textInputAutocapitalization(.never).keyboardType(.URL)
                 SecureField("Pairing token", text: $token).textInputAutocapitalization(.never)
                 Button("Verify and pair") { Task { await model.pair(endpoint: endpoint, token: token) } }.disabled(endpoint.isEmpty || token.isEmpty)
+                if model.relayOnline { Label("PC connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
             }
             Section("Privacy") { Text("The token is stored in the iPhone Keychain. The relay is reachable only inside your Tailscale network and never stores conversation text in its logs.") }
         }
         .navigationTitle("Pair Windows PC")
         .onAppear { endpoint = model.endpoint }
+        .sheet(isPresented: $scanning) {
+            NavigationStack {
+                QRScanner { result in
+                    scanning = false
+                    switch result {
+                    case .success(let value): pairingPayload = value; parsePayload()
+                    case .failure(let error): model.errorMessage = error.localizedDescription
+                    }
+                }
+                .overlay(alignment: .bottom) { Text("Point at the QR in LiveCue Desktop").padding().background(.regularMaterial, in: Capsule()).padding() }
+                .navigationTitle("Scan PC QR")
+                .toolbar { Button("Cancel") { scanning = false } }
+            }
+        }
     }
 
     private func parsePayload() {
-        struct Payload: Decodable { let endpoint: String; let token: String }
-        guard let data = pairingPayload.data(using: .utf8), let value = try? JSONDecoder().decode(Payload.self, from: data) else {
-            model.errorMessage = "That pairing payload is not valid JSON."; return
-        }
-        endpoint = value.endpoint; token = value.token
+        do {
+            let value = try PairingPayload.parse(pairingPayload)
+            endpoint = value.endpoint; token = value.token; pairingPayload = ""
+        } catch { model.errorMessage = error.localizedDescription }
     }
 }
 
@@ -60,9 +76,23 @@ struct ModelLibraryView: View {
                                 Task { await model.selectAndPrepare(item); workingVariant = nil }
                             }.buttonStyle(.borderedProminent).disabled(workingVariant != nil)
                             if model.selectedModelVariant == item.variant {
-                                Button("Unload") { model.remove(item) }.buttonStyle(.bordered)
+                                Button("Unload") { model.remove(item) }.buttonStyle(.bordered).disabled(model.isPreparing)
                             }
                             if workingVariant == item.variant { ProgressView() }
+                        }
+                        if let started = model.transcriber.preparationStarted {
+                            ProgressView(value: model.transcriber.preparationFraction).accessibilityIdentifier("model-download-progress")
+                            TimelineView(.periodic(from: .now, by: 1)) { context in
+                                let elapsed = max(0, Int((model.transcriber.preparationFinished ?? context.date).timeIntervalSince(started)))
+                                HStack {
+                                    Text("\(Int(model.transcriber.preparationFraction * 100))% setup")
+                                    Spacer()
+                                    Text(String(format: "%02d:%02d elapsed", elapsed / 60, elapsed % 60)).monospacedDigit()
+                                }.font(.caption)
+                            }
+                            Text(model.transcriber.status).font(.caption)
+                            if !model.transcriber.preparationBytes.isEmpty { Text(model.transcriber.preparationBytes).font(.caption).foregroundStyle(.secondary) }
+                            Text("Downloading and model preparation are separate steps; preparation can continue after the download reaches 100%.").font(.caption2).foregroundStyle(.secondary)
                         }
                     }.padding(.vertical, 4)
                 }

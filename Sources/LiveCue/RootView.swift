@@ -16,6 +16,12 @@ struct RootView: View {
             modePage.tabItem { Label("Live Parakeet", systemImage: "waveform") }.tag("parakeet")
         }
         .tint(.indigo)
+        .task {
+            while !Task.isCancelled {
+                await model.checkRelay()
+                do { try await Task.sleep(for: .seconds(5)) } catch { break }
+            }
+        }
         .alert("LiveCue", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
@@ -71,7 +77,7 @@ struct HomeView: View {
                     LabeledContent("Windows relay", value: model.isPaired ? "Paired" : "Pairing required")
                 } label: { Label("Readiness", systemImage: "checklist") }
 
-                NavigationLink { PairingView() } label: { SettingsRow(icon: "desktopcomputer", title: "Pair Windows PC", detail: model.isPaired ? "Configured" : "Required") }
+                NavigationLink { PairingView() } label: { SettingsRow(icon: "desktopcomputer", title: "Pair Windows PC", detail: model.isPaired ? "Configured" : "Required") }.accessibilityIdentifier("pair-pc")
                 NavigationLink { ModelLibraryView() } label: { SettingsRow(icon: "cpu", title: "Model Library", detail: "On-device speech models") }
                 NavigationLink { ModelLabView() } label: { SettingsRow(icon: "gauge.with.dots.needle.67percent", title: "Model Lab", detail: "Speed and accuracy benchmark") }
                 NavigationLink { HistoryView() } label: { SettingsRow(icon: "clock.arrow.circlepath", title: "History", detail: "\(model.sessions.count) saved sessions") }

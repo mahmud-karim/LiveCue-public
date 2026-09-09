@@ -4,6 +4,29 @@ import { once } from "node:events";
 import { createLiveCueServer } from "../src/server.ts";
 import { hashToken, verifyToken } from "../src/security.ts";
 
+test("desktop feed reports input and reply without exposing control routes", async () => {
+  const events: Record<string, unknown>[] = [];
+  let token = hashToken("desktop-test-token"); let accepting = true;
+  const runner = { active: new Map(), run: async () => ({ answer: "Fixture reply" }), cancel: () => false };
+  const server = createLiveCueServer(() => token, runner as never, { emit: event => events.push(event), accepting: () => accepting });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  try {
+    const address = server.address(); assert.ok(address && typeof address !== "string");
+    const base = `http://127.0.0.1:${address.port}`;
+    const headers = { Authorization: "Bearer desktop-test-token" };
+    assert.equal((await fetch(base + "/v1/assist", { method: "POST", headers, body: JSON.stringify({ requestId: "fixture", transcript: "Fixture question" }) })).status, 200);
+    assert.ok(events.some(e => e.type === "request" && (e.payload as { transcript: string }).transcript === "Fixture question"));
+    assert.ok(events.some(e => e.type === "reply"));
+    assert.equal(JSON.stringify(events).includes("desktop-test-token"), false);
+    assert.equal((await fetch(base + "/desktop/pair", { method: "POST", headers })).status, 404);
+    accepting = false;
+    assert.equal((await fetch(base + "/v1/assist", { method: "POST", headers, body: "{}" })).status, 503);
+    accepting = true; token = hashToken("rotated-token");
+    assert.equal((await fetch(base + "/v1/health", { headers })).status, 401);
+    assert.equal((await fetch(base + "/v1/health", { headers: { Authorization: "Bearer rotated-token" } })).status, 200);
+  } finally { server.close(); }
+});
+
 test("token hashing and constant-time verification", () => {
   const hash = hashToken("secret");
   assert.equal(verifyToken("secret", hash), true);
@@ -38,4 +61,3 @@ test("relay rejects payloads over 128 KB", async () => {
   assert.equal(response.status, 413);
   server.close();
 });
-

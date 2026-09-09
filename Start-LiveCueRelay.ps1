@@ -38,6 +38,8 @@ $dnsName = [string]$status.Self.DNSName
 if ([string]::IsNullOrWhiteSpace($dnsName)) { throw 'Tailscale did not return this PC DNS name.' }
 $dnsName = $dnsName.TrimEnd('.')
 $publicEndpoint = "https://$dnsName/"
+$env:LIVECUE_PUBLIC_ENDPOINT = $publicEndpoint
+$env:LIVECUE_PORT = '47831'
 
 Write-Host "Codex ready: $codexExecutable" -ForegroundColor Green
 Write-Host "Tailscale ready: $dnsName" -ForegroundColor Green
