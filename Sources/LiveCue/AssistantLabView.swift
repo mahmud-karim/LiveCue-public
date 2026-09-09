@@ -18,8 +18,8 @@ struct AssistantLabView: View {
                 }
                 if let option = model.assistantModels.first(where: { $0.id == model.assistantConfiguration.model }) {
                     Picker("Reasoning", selection: $model.assistantConfiguration.reasoningEffort) {
-                        ForEach(option.reasoningEfforts, id: \.self) { Text($0.capitalized).tag($0) }
-                    }.accessibilityIdentifier("reasoning-picker")
+                        ForEach(option.reasoningEfforts, id: \.self) { Text($0 == "none" ? "None (no reasoning)" : $0.capitalized).tag($0) }
+                    }.pickerStyle(.menu).accessibilityIdentifier("reasoning-picker")
                 }
             }.disabled(model.isAssisting)
             Section {
@@ -27,7 +27,7 @@ struct AssistantLabView: View {
                     HStack { Text("Refresh PC model list"); if model.isLoadingModels { ProgressView() } }
                 }.disabled(model.isLoadingModels)
                 Text(model.modelCatalogMessage).font(.caption).foregroundStyle(.secondary)
-                Text("Selection applies to your next Assist and session summary. Low is the lightest reasoning level advertised by this PC. No model is guaranteed to be fastest; test the same text.")
+                Text("Selection applies to your next Assist and session summary. None disables reasoning on supported models; it does not remove network or CLI startup time. Astra and Spark start at Low. No model is guaranteed to be fastest; test the same text.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Recent comparisons") {

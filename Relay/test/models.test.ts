@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { once } from "node:events";
-import { modelCatalog, validateSelection } from "../src/models.ts";
+import { modelCatalog, supportedEfforts, validateSelection } from "../src/models.ts";
 import { createLiveCueServer } from "../src/server.ts";
 import { hashToken } from "../src/security.ts";
+
+test("verified no-reasoning models are exposed without enabling it for Astra or Spark", () => {
+  for (const model of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"]) {
+    assert.deepEqual(supportedEfforts(model, ["low", "high", "ultra"]), ["none", "low", "high"]);
+  }
+  for (const model of ["gpt-6-astra", "gpt-5.3-codex-spark"]) {
+    assert.deepEqual(supportedEfforts(model, ["low", "medium", "ultra"]), ["low", "medium"]);
+  }
+});
 
 test("selection rejects model/config injection and invalid reasoning combinations", () => {
   const catalog = [{ id: "gpt-test", name: "Test", reasoningEfforts: ["low"] }];

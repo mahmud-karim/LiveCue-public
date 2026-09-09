@@ -42,10 +42,11 @@ final class AppModel: ObservableObject {
         defer { isLoadingModels = false }
         if isUITesting {
             assistantModels = [
-                .init(id: "gpt-5.6-sol", name: "GPT-5.6 Sol", reasoningEfforts: ["low", "medium", "high"]),
-                .init(id: "gpt-5.6-luna", name: "GPT-5.6 Luna", reasoningEfforts: ["low", "medium", "high"]),
+                .init(id: "gpt-6-astra", name: "GPT-6 Astra", reasoningEfforts: ["low", "medium", "high"]),
+                .init(id: "gpt-5.6-sol", name: "GPT-5.6 Sol", reasoningEfforts: ["none", "low", "medium", "high"]),
+                .init(id: "gpt-5.6-luna", name: "GPT-5.6 Luna", reasoningEfforts: ["none", "low", "medium", "high"]),
                 .init(id: "gpt-5.3-codex-spark", name: "Codex Spark", reasoningEfforts: ["low", "medium", "high"])
-            ]; return
+            ]; modelCatalogMessage = "Simulator test catalog; timings use fixtures."; return
         }
         guard let token, isPaired else { modelCatalogMessage = "Pair your PC first."; return }
         do {

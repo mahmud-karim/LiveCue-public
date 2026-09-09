@@ -47,6 +47,8 @@ English only, no speaker diarization, no TTS, no invisible overlay, no lock-scre
 
 On iPhone, open **Assistant models & timing** (or the model row during a conversation). Refresh the authenticated PC catalog, choose a model and supported reasoning level, then tap Assist. The selection also applies to session summaries. Models are sourced from the local Codex catalog; account access is confirmed only when a request succeeds. Service tier remains default.
 
+GPT-6 Astra appears when the PC catalog refreshes. **None (no reasoning)** is additionally enabled for GPT-5.6 Sol/Terra/Luna and GPT-5.5, verified with signed-in CLI structured-output requests. Astra and Spark start at Low. No-reasoning is not a guarantee of instant response; CLI startup and network time remain. Paid/multiplier Fast mode is not enabled.
+
 Each saved answer records its model, reasoning, STT mode, transcript character count, and timings. **Retry same text** reuses the exact previous text, instruction, and rolling context with a fresh request ID and your newly selected assistant settings. It does not retranscribe audio.
 
 Timing boundaries: iPhone monotonic tap-to-answer, pending STT after the tap, context preparation, full HTTP round trip; PC monotonic Codex CLI invocation and remaining relay overhead. CLI time includes startup, cloud work and output handling, not pure model inference. Round trip minus PC duration is a transfer/client-overhead estimate, not separate upload/download measurements. Live Parakeet processing occurs before the tap; its last chunk timing is shown separately. Old saved sessions remain readable.
