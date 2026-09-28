@@ -18,7 +18,8 @@ env:
 
 jobs:
   test:
-    runs-on: macos-15-intel
+    # FluidAudio's pinned NeMo simulator artifact requires Apple Silicon.
+    runs-on: macos-15
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +47,7 @@ jobs:
             | tee artifacts/xcodebuild.log
       - name: Capture final simulator screen
         if: always()
+        timeout-minutes: 2
         run: |
           mkdir -p artifacts
           xcrun simctl boot "${{ steps.simulator.outputs.device_id }}" || true
