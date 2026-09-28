@@ -17,10 +17,8 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Transcription & AI") {
-                Picker("Transcription", selection: $model.mode) {
-                    Text("Meta Muse · live cloud").tag("meta")
-                    Text("Voz · local on Assist").tag("voz")
-                    Text("Parakeet · local live").tag("parakeet")
+                NavigationLink { SpeechProviderView() } label: {
+                    LabeledContent("Transcription", value: model.mode == "meta" ? "Meta Muse" : model.mode.capitalized)
                 }.disabled(model.activeSession != nil || model.isPreparing).accessibilityIdentifier("speech-provider")
                 if model.mode != "meta" {
                     NavigationLink("Model Library") { ModelLibraryView() }
@@ -40,5 +38,20 @@ struct SettingsView: View {
                 Text("The Meta API key stays encrypted on your Windows PC and is never sent to this iPhone. Your phone stores only its PC pairing token in Keychain. Live audio is not saved by the relay; transcripts and replies appear in desktop memory and are saved in your iPhone history. Obtain permission before recording others.").font(.system(size: 13)).foregroundStyle(.secondary)
             }
         }.scrollContentBackground(.hidden).background(MintTheme.background).navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct SpeechProviderView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    private let options = [("meta", "Meta Muse · live cloud"), ("voz", "Voz · local on Assist"), ("parakeet", "Parakeet · local live")]
+    var body: some View {
+        List {
+            ForEach(options, id: \.0) { option in
+                Button { model.mode = option.0; dismiss() } label: {
+                    HStack { Text(option.1); Spacer(); if model.mode == option.0 { Image(systemName: "checkmark") } }
+                }.accessibilityIdentifier("provider-" + option.0)
+            }
+        }.navigationTitle("Transcription").navigationBarTitleDisplayMode(.inline)
     }
 }

@@ -17,9 +17,9 @@ struct AssistantLabView: View {
                     }.accessibilityIdentifier("choose-" + option.id)
                 }
                 if let option = model.assistantModels.first(where: { $0.id == model.assistantConfiguration.model }) {
-                    Picker("Reasoning", selection: $model.assistantConfiguration.reasoningEffort) {
-                        ForEach(option.reasoningEfforts, id: \.self) { Text($0 == "none" ? "None (no reasoning)" : $0.capitalized).tag($0) }
-                    }.pickerStyle(.menu).accessibilityIdentifier("reasoning-picker")
+                    NavigationLink { ReasoningSelectionView(efforts: option.reasoningEfforts) } label: {
+                        LabeledContent("Reasoning", value: model.assistantConfiguration.reasoningEffort.capitalized)
+                    }.accessibilityIdentifier("reasoning-picker")
                 }
             }.disabled(model.isAssisting)
             Section {
@@ -53,6 +53,21 @@ struct AssistantLabView: View {
             }
         }.navigationTitle("Assistant Lab")
         .task { await model.refreshAssistantModels() }
+    }
+}
+
+private struct ReasoningSelectionView: View {
+    let efforts: [String]
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        List(efforts, id: \.self) { effort in
+            Button {
+                model.assistantConfiguration.reasoningEffort = effort; dismiss()
+            } label: {
+                HStack { Text(effort == "none" ? "None (no reasoning)" : effort.capitalized); Spacer(); if effort == model.assistantConfiguration.reasoningEffort { Image(systemName: "checkmark") } }
+            }.accessibilityIdentifier("effort-" + effort)
+        }.navigationTitle("Reasoning").navigationBarTitleDisplayMode(.inline)
     }
 }
 
