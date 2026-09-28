@@ -61,6 +61,7 @@ function Handle-Event($event) {
             $ui.StopButton.IsEnabled = $true; $ui.PauseButton.IsEnabled = $true; $ui.PairButton.IsEnabled = $true
             $script:paused = $false; $ui.PauseButton.Content = 'Pause relay'
             Add-Activity 'Relay started. Waiting for your iPhone.'
+            Add-Activity $(if ($event.cloudSpeechReady) { 'Meta Muse is configured. The key remains on this PC.' } else { 'Meta cloud key not configured. Local transcription is still available.' })
         }
         'phone-seen' { $script:lastSeen = Get-Date; $ui.PhoneStatus.Text = 'iPhone connected'; $ui.PhoneDot.Fill = '#35B665' }
         'state' {
@@ -134,7 +135,7 @@ function Start-Relay {
         $script:relayProcess = New-Object Diagnostics.Process
         $script:relayProcess.StartInfo = $info
         $null = $script:relayProcess.Start()
-        $info.EnvironmentVariables.Remove('LIVECUE_META_API_KEY')
+        [void]$info.EnvironmentVariables.Remove('LIVECUE_META_API_KEY')
         $script:readTask = $script:relayProcess.StandardOutput.ReadLineAsync()
         $script:errorTask = $script:relayProcess.StandardError.ReadLineAsync()
         $ui.Activity.Clear()

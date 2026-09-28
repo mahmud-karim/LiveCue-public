@@ -21,7 +21,7 @@ final class AppModel: ObservableObject {
     @Published var elapsedSeconds = 0
     @Published var benchmarks: [BenchmarkResult] = []
 
-    @Published var mode = "meta"
+    @Published var mode = "meta" { didSet { if oldValue != mode { selectedModelVariant = nil } } }
     @Published var isPreparing = false
     @Published var isTransitioning = false
     @Published var assistStage = ""

@@ -75,7 +75,7 @@ struct PerformanceView: View {
             } else { Text("PC timing unavailable. Restart the updated desktop relay.").foregroundStyle(.orange) }
             if let chunk = metrics.lastLiveChunkMs { LabeledContent("Last live STT chunk", value: seconds(chunk)) }
             Text("\(metrics.speechModel) · \(metrics.transcriptCharacters) transcript characters\(metrics.reusedText ? " · same-text retry" : "")").font(.caption)
-            Text("PC timings are parts of the round trip, not extra time. Codex includes CLI startup, cloud processing and output handling—not pure inference. Transfer is an estimate including encoding/decoding. Parakeet runs before the tap, so its live transcription is not part of tap-to-answer time.")
+            Text("PC timings are parts of the round trip, not extra time. Codex includes CLI startup, cloud processing and output handling—not pure inference. Transfer is an estimate including encoding/decoding. Live transcription (Meta or Parakeet) runs before the tap, so it is not part of tap-to-answer time. First-word cloud timing is shown above the live transcript.")
                 .font(.caption).foregroundStyle(.secondary)
         }.font(.subheadline).monospacedDigit().accessibilityIdentifier("response-timing")
     }

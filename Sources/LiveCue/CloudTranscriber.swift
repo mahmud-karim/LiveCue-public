@@ -23,6 +23,7 @@ final class CloudTranscriber {
     private var firstPartial = false
     private var started = 0.0
     private var offset = 0.0
+    private var audioObservers: [NSObjectProtocol] = []
 
     func start(endpoint: String, token: String, offset: Double) async throws {
         stop(); generation = UUID(); let id = generation
@@ -119,6 +120,14 @@ final class CloudTranscriber {
         }
         engine = audio
         do { try audio.start() } catch { stop(); throw error }
+        audioObservers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
+            guard let value = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, value == AVAudioSession.InterruptionType.began.rawValue else { return }
+            Task { @MainActor in self?.fail("Microphone interrupted. Resume when your call or other audio finishes.") }
+        })
+        audioObservers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in
+            guard let value = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt, value == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
+            Task { @MainActor in self?.fail("Microphone route changed. Resume to use the current microphone.") }
+        })
     }
     func pause() async throws {
         guard let ws = socket else { return }
@@ -136,6 +145,7 @@ final class CloudTranscriber {
         stop()
     }
     func stop() {
+        audioObservers.forEach { NotificationCenter.default.removeObserver($0) }; audioObservers.removeAll()
         generation = UUID(); ending = true
         engine?.inputNode.removeTap(onBus: 0); engine?.stop(); engine = nil
         sink?.finish(); sink = nil; sender?.cancel(); sender = nil; receiver?.cancel(); receiver = nil

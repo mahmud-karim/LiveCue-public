@@ -26,7 +26,7 @@ server.on("error", (error: NodeJS.ErrnoException) => {
   process.exitCode = 1; input.close();
 });
 server.listen(Number(process.env.LIVECUE_PORT || 47831), "127.0.0.1", () => {
-  emit({ type: "ready", endpoint, model: "gpt-5.6-sol", accepting, port: (server.address() as { port: number }).port });
+  emit({ type: "ready", endpoint, model: "gpt-5.6-sol", accepting, cloudSpeechReady: Boolean(process.env.LIVECUE_META_API_KEY), port: (server.address() as { port: number }).port });
   if (plaintextToken) { showPairing(plaintextToken); plaintextToken = undefined; }
 });
 function shutdown() {
