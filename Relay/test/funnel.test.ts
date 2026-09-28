@@ -5,16 +5,21 @@ import {once} from 'node:events';
 import {randomBytes, createHash} from 'node:crypto';
 import {WebSocket, WebSocketServer} from 'ws';
 import {createLiveCueProxy} from '../funnel/livecue-proxy.mjs';
+import {createLiveCueServer} from '../src/server.ts';
 
 test('Funnel native bearer isolation, allowlist, bounded bodies, HTTP and binary WebSocket', async () => {
   const token = randomBytes(32).toString('base64url');
   let hash = createHash('sha256').update(token).digest('hex');
   let hits = 0, headers: http.IncomingHttpHeaders = {};
-  const upstream = http.createServer((req, res) => { hits++; headers = req.headers; req.resume(); req.on('end', () => { res.setHeader('Set-Cookie', 'should-not-leak=test'); res.end('{"ok":true}'); }); });
-  const hub = new WebSocketServer({server: upstream});
+  const valid = req => createHash('sha256').update((req.headers.authorization || '').slice(7)).digest('hex') === hash;
+  const upstream = http.createServer((req, res) => {
+    if (!valid(req)) { res.writeHead(401); res.end(); return; }
+    hits++; headers = req.headers; req.resume(); req.on('end', () => { res.setHeader('Set-Cookie', 'should-not-leak=test'); res.end('{"ok":true}'); });
+  });
+  const hub = new WebSocketServer({server: upstream, verifyClient: ({req}) => valid(req)});
   hub.on('connection', ws => ws.on('message', (data, binary) => ws.send(data, {binary})));
   upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening');
-  const proxy = createLiveCueProxy({port: (upstream.address() as any).port, tokenHash: () => hash});
+  const proxy = createLiveCueProxy({port: (upstream.address() as any).port});
   const gateway = http.createServer((req, res) => { if (!proxy.request(req, res)) { res.writeHead(404); res.end(); } });
   gateway.on('upgrade', (req, socket, head) => { if (!proxy.upgrade(req, socket, head)) socket.destroy(); });
   gateway.listen(0, '127.0.0.1'); await once(gateway, 'listening');
@@ -48,5 +53,43 @@ test('Funnel native bearer isolation, allowlist, bounded bodies, HTTP and binary
     proxy.close(); for (const ws of hub.clients) ws.terminate(); hub.close();
     gateway.closeAllConnections(); upstream.closeAllConnections();
     await Promise.all([new Promise<void>(r=>gateway.close(()=>r())),new Promise<void>(r=>upstream.close(()=>r()))]);
+  }
+});
+
+test('Funnel uses the real relay pairing authority, fails closed and respects rotation', async () => {
+  const token = randomBytes(32).toString('base64url');
+  const next = randomBytes(32).toString('base64url');
+  const digest = value => createHash('sha256').update(value).digest('hex');
+  let currentHash = digest(token), assistantCalls = 0, seen = 0;
+  const relay = createLiveCueServer(() => currentHash, {
+    run: async () => { assistantCalls++; throw Error('Must not run'); }, cancel: () => false
+  } as any, {emit: event => { if (event.type === 'phone-seen') seen++; }});
+  relay.listen(0, '127.0.0.1'); await once(relay, 'listening');
+  const proxy = createLiveCueProxy({port: (relay.address() as any).port});
+  const gateway = http.createServer((req, res) => { if (!proxy.request(req, res)) { res.writeHead(404); res.end(); } });
+  gateway.on('upgrade', (req, socket, head) => { if (!proxy.upgrade(req, socket, head)) socket.destroy(); });
+  gateway.listen(0, '127.0.0.1'); await once(gateway, 'listening');
+  const base = `http://127.0.0.1:${(gateway.address() as any).port}`;
+  const request = (token, route = '/v1/health', method = 'GET') => fetch(base + route, {
+    method, headers: {authorization: `Bearer ${token}`}, ...(method === 'POST' ? {body: '{}'} : {})
+  });
+  try {
+    assert.equal((await request(next)).status, 401);
+    assert.equal((await request(next, '/v1/assist', 'POST')).status, 401);
+    assert.equal(seen, 0); assert.equal(assistantCalls, 0);
+    assert.equal((await request(token)).status, 200);
+    assert.equal((await request(token, '/v1/pair/verify', 'POST')).status, 200);
+    currentHash = digest(next);
+    assert.equal((await request(token)).status, 401);
+    assert.equal((await request(next)).status, 200);
+    const ws = new WebSocket(base.replace('http:', 'ws:') + '/v1/speech', {headers: {authorization: `Bearer ${token}`}});
+    const denied = new Promise<number>(resolve => ws.on('unexpected-response', (_req, res) => { res.resume(); ws.terminate(); resolve(res.statusCode!); }));
+    ws.on('error', () => {}); assert.equal(await denied, 401);
+    assert.equal(assistantCalls, 0);
+    relay.closeAllConnections(); await new Promise<void>(resolve => relay.close(() => resolve()));
+    assert.equal((await request(next)).status, 502);
+  } finally {
+    proxy.close(); gateway.closeAllConnections(); relay.closeAllConnections();
+    await Promise.all([new Promise<void>(r => gateway.close(() => r())), new Promise<void>(r => relay.close(() => r()))]);
   }
 });

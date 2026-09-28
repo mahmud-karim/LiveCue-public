@@ -1,21 +1,17 @@
 import http from 'node:http';
-import {createHash, timingSafeEqual} from 'node:crypto';
 
 // Native LiveCue credentials are separate from the gateway's browser cookies.
 // No provider key, upstream URL, admin API, or file route is exposed here.
-export function createLiveCueProxy({tokenHash, port = 47831}) {
+// The relay is the sole pairing authority. It checks its current in-memory hash
+// before serving any HTTP endpoint or accepting a speech WebSocket. Background
+// gateways must not depend on reading another process's per-user config file.
+export function createLiveCueProxy({port = 47831} = {}) {
   const sockets = new Set();
   let requests = 0, streams = 0;
   const claimed = req => String(req.url || '').startsWith('/v1/');
-  const authorized = req => {
+  const nativeBearer = req => {
     if (req.headers.origin || req.headers['sec-fetch-site']) return false;
-    const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization || '');
-    if (!match) return false;
-    try {
-      const expected = tokenHash();
-      if (!/^[a-f0-9]{64}$/.test(expected || '')) return false;
-      return timingSafeEqual(createHash('sha256').update(match[1]).digest(), Buffer.from(expected, 'hex'));
-    } catch { return false; }
+    return /^Bearer ([A-Za-z0-9_-]{43})$/.test(req.headers.authorization || '');
   };
   const reply = (res, code) => {
     if (res.headersSent) return res.destroy();
@@ -26,7 +22,7 @@ export function createLiveCueProxy({tokenHash, port = 47831}) {
   return {
     request(req, res) {
       if (!claimed(req)) return false;
-      if (!authorized(req)) { reply(res, 401); return true; }
+      if (!nativeBearer(req)) { reply(res, 401); return true; }
       const allowed = (req.method === 'GET' && ['/v1/health', '/v1/models'].includes(req.url)) ||
         (req.method === 'POST' && ['/v1/pair/verify', '/v1/assist', '/v1/session-summary'].includes(req.url)) ||
         (req.method === 'DELETE' && /^\/v1\/requests\/[A-Za-z0-9_-]{1,80}$/.test(req.url));
@@ -57,7 +53,7 @@ export function createLiveCueProxy({tokenHash, port = 47831}) {
     },
     upgrade(req, socket, head) {
       if (!claimed(req)) return false;
-      if (!authorized(req)) { reject(socket, 401); return true; }
+      if (!nativeBearer(req)) { reject(socket, 401); return true; }
       if (req.url !== '/v1/speech' || req.method !== 'GET' || req.headers.upgrade?.toLowerCase() !== 'websocket') {
         reject(socket, 404); return true;
       }
