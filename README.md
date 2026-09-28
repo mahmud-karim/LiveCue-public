@@ -23,6 +23,14 @@ The relay binds only to `127.0.0.1`; `tailscale serve` exposes it as private HTT
 
 ## Windows companion
 
+### Optional shared Funnel access
+
+An existing authenticated tunnel gateway can load `Relay/funnel/livecue-proxy.mjs` and route only the declared `/v1/` LiveCue HTTP endpoints and `/v1/speech` WebSocket to loopback port 47831. Supply a callback that reads the current LiveCue pairing hash from the private PC config; never put the bearer or provider key in source. LiveCue requires its own bearer token, rejects browser origins, strips cookies, and does not accept the gateway's browser session as authorization. Other app routes retain their existing authentication.
+
+After explicitly approving internet reachability and installing the adapter, save a local `%LOCALAPPDATA%/LiveCue/connection.json` with `mode` set to `funnel` and `endpoint` set to the root HTTPS Funnel address (including its port). The launcher validates that the hostname belongs to this PC, advertises that address in the QR, and leaves existing Tailscale mappings untouched. Without this local configuration, the existing private mode remains. Scan a new QR on the iPhone to change its saved endpoint. LiveCue v0.5.0 already supports this; no IPA rebuild is needed. Keep Tailscale and LiveCue running on the PC, but the iPhone needs only ordinary internet. Generating a QR verifies the advertised HTTPS health endpoint without logging the bearer.
+
+Funnel access is internet-reachable, protected by the random pairing token, not tailnet membership. Rotating the LiveCue QR invalidates old LiveCue tokens; it does not revoke other apps' browser sessions. Keep PC connection configuration, pairing state and provider keys outside this public repository.
+
 The native WPF companion requires Windows PowerShell, Node.js 24+, Codex CLI, and Tailscale. Start/stop the relay, pause new requests, see recent authenticated phone activity, and inspect the exact incoming text context and returned answer. The phone sends a heartbeat every five seconds while the app is active; "last seen" does not prove the phone is offline when iOS backgrounds it. Closing the window stops its relay and cancels pending requests. Activity is bounded in memory and cleared on close; nothing is written to conversation logs. The QR hides after two minutes and is never sent to a remote QR service. Desktop control uses a private stdin/stdout pipe, not HTTP endpoints. The terminal launcher remains available.
 
 Model Library shows the SDK-reported download/setup percentage, byte/file counters, and elapsed time. Compilation/Neural Engine preparation may continue after the file download completes; this phase is not a promise of a fixed remaining time.

@@ -37,7 +37,10 @@ if (-not $status.Self.Online) { throw 'Tailscale is not online. Open Tailscale a
 $dnsName = [string]$status.Self.DNSName
 if ([string]::IsNullOrWhiteSpace($dnsName)) { throw 'Tailscale did not return this PC DNS name.' }
 $dnsName = $dnsName.TrimEnd('.')
-$publicEndpoint = "https://$dnsName/"
+. (Join-Path $PSScriptRoot 'Load-LiveCueConnection.ps1')
+$connection = Get-LiveCueConnection $dnsName
+$publicEndpoint = $connection.Endpoint
+$env:LIVECUE_CONNECTION_MODE = $connection.Mode
 $env:LIVECUE_PUBLIC_ENDPOINT = $publicEndpoint
 $env:LIVECUE_PORT = '47831'
 
@@ -48,11 +51,14 @@ if ($CheckOnly) {
     return
 }
 
-& $tailscale serve --bg 47831 | Out-Host
+if ($connection.Mode -eq 'private') {
+    & $tailscale serve --bg 47831 | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw 'Tailscale Serve setup failed.' }
+}
 $env:LIVECUE_PUBLIC_ENDPOINT = $publicEndpoint
 $env:LIVECUE_PORT = '47831'
 
-Write-Host "`nLiveCue will be private at $publicEndpoint" -ForegroundColor Cyan
+Write-Host "`nLiveCue authenticated endpoint: $publicEndpoint ($($connection.Mode))" -ForegroundColor Cyan
 Push-Location $relayRoot
 try {
     . (Join-Path $PSScriptRoot 'Load-LiveCueSpeechKey.ps1')

@@ -20,6 +20,14 @@ function showPairing(token: string) {
   const payload = JSON.stringify({ endpoint, token });
   const qr = new QRCode(-1, level.M); qr.addData(payload); qr.make();
   emit({ type: "pairing", endpoint, modules: qr.modules });
+  // Verify the exact advertised address without logging or persisting its bearer.
+  void fetch(new URL('/v1/health', endpoint), {headers: {Authorization: `Bearer ${token}`},
+    redirect: 'error', signal: AbortSignal.timeout(10000)})
+    .then(async response => {
+      if (!response.ok || !(await response.json() as {ok?: boolean}).ok) throw new Error('Unavailable');
+      emit({type: 'notice', message: process.env.LIVECUE_CONNECTION_MODE === 'funnel'
+        ? 'Secure Funnel connection verified. The iPhone VPN is not required.' : 'Secure PC connection verified.'});
+    }).catch(() => emit({type: 'notice', message: 'Pairing code created, but the advertised connection could not be verified. Check the PC tunnel before pairing.'}));
 }
 server.on("error", (error: NodeJS.ErrnoException) => {
   emit({ type: "fatal", message: error.code === "EADDRINUSE" ? "The relay port is already in use. Close the old LiveCue relay terminal, then click Start relay." : "Could not start the relay." });

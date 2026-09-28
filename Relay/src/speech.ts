@@ -18,8 +18,8 @@ export function attachSpeech(server: Server, tokenHash: string | (() => string),
     if (request.headers.origin || !token || !verifyToken(token, hash())) return reject(401);
     if (!apiKey || controls.accepting?.() === false) return reject(503);
     if (active) return reject(429);
-    active = true;
     hub.handleUpgrade(request, socket, head, phone => {
+      active = true;
       let upstream: WebSocket;
       try { upstream = connect(); } catch { active = false; phone.close(1011); return; }
       const started = performance.now();

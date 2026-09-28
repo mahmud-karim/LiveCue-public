@@ -61,6 +61,7 @@ function Handle-Event($event) {
             $ui.StopButton.IsEnabled = $true; $ui.PauseButton.IsEnabled = $true; $ui.PairButton.IsEnabled = $true
             $script:paused = $false; $ui.PauseButton.Content = 'Pause relay'
             Add-Activity 'Relay started. Waiting for your iPhone.'
+            if ($env:LIVECUE_CONNECTION_MODE -eq 'funnel') { Add-Activity 'Funnel enabled: your iPhone needs internet, not the Tailscale VPN. Pair using this PC address.' }
             Add-Activity $(if ($event.cloudSpeechReady) { 'Meta Muse is configured. The key remains on this PC.' } else { 'Meta cloud key not configured. Local transcription is still available.' })
         }
         'phone-seen' { $script:lastSeen = Get-Date; $ui.PhoneStatus.Text = 'iPhone connected'; $ui.PhoneDot.Fill = '#35B665' }
@@ -121,8 +122,10 @@ function Start-Relay {
         $ui.StartButton.IsEnabled = $false; $ui.Status.Text = 'Checking Codex and Tailscale...'
         & (Join-Path $PSScriptRoot 'Start-LiveCueRelay.ps1') -CheckOnly | Out-Null
         $tailscalePath = Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'
-        & $tailscalePath serve --bg 47831 | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'Tailscale HTTPS setup failed. Check that Tailscale is connected.' }
+        if ($env:LIVECUE_CONNECTION_MODE -ne 'funnel') {
+            & $tailscalePath serve --bg 47831 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Tailscale HTTPS setup failed. Check that Tailscale is connected.' }
+        }
         $info = New-Object Diagnostics.ProcessStartInfo
         $info.FileName = (Get-Command node -CommandType Application).Source
         $info.Arguments = '--experimental-strip-types "' + (Join-Path $PSScriptRoot 'Relay\src\desktop.ts') + '"'
