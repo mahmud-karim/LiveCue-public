@@ -26,6 +26,16 @@ final class ComparisonTranscriber: ObservableObject {
     private var samples: [Float] = []
     private var cursor = 0
     private var generation = UUID()
+    private let cloud = CloudTranscriber()
+    var cloudEndpoint = ""
+    var cloudToken = ""
+    var cloudOffset = 0.0
+    func useCloud() {
+        variant = "meta"
+        cloud.onUpdate = { [weak self] partial, energy, timing in self?.partialText = partial; self?.energy = energy; self?.timing = timing }
+        cloud.onFinal = { [weak self] segments in self?.onFinalSegments?(segments) }
+        cloud.onError = { [weak self] message in self?.onError?(message) }
+    }
     var onFinalSegments: (([LiveCueCore.TranscriptSegment]) -> Void)?
     var onError: ((String) -> Void)?
     static let catalog: [TranscriptionModel] = [
@@ -76,6 +86,7 @@ final class ComparisonTranscriber: ObservableObject {
         } catch { status = "Preparation failed"; throw error }
     }
     func start() async throws {
+        if variant == "meta" { try await cloud.start(endpoint: cloudEndpoint, token: cloudToken, offset: cloudOffset); status = "Listening"; return }
         guard engine == nil else { return }
         generation = UUID(); let id = generation
         partialText = ""; timing = ""; samples = []; cursor = 0
@@ -150,6 +161,7 @@ final class ComparisonTranscriber: ObservableObject {
         status = engine == nil ? "Paused" : "Recording"
     }
     func pause() async throws {
+        if variant == "meta" { try await cloud.pause(); status = "Paused"; energy = 0; return }
         engine?.inputNode.removeTap(onBus: 0); engine?.stop(); engine = nil
         continuation?.finish(); continuation = nil
         await consumer?.value; consumer = nil
@@ -162,6 +174,7 @@ final class ComparisonTranscriber: ObservableObject {
         status = "Paused"
     }
     func stop() {
+        cloud.stop()
         generation = UUID()
         engine?.inputNode.removeTap(onBus: 0); engine?.stop(); engine = nil
         continuation?.finish(); continuation = nil; consumer?.cancel(); consumer = nil

@@ -4,7 +4,6 @@ import SwiftUI
 struct LiveCueApp: App {
     @StateObject private var model = AppModel()
     var body: some Scene {
-        WindowGroup { RootView().environmentObject(model) }
+        WindowGroup { RootView().environmentObject(model).modifier(MintTypography()) }
     }
 }
-

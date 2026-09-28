@@ -22,7 +22,7 @@ struct PairingView: View {
                 Button("Verify and pair") { Task { await model.pair(endpoint: endpoint, token: token) } }.disabled(endpoint.isEmpty || token.isEmpty)
                 if model.relayOnline { Label("PC connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
             }
-            Section("Privacy") { Text("The token is stored in the iPhone Keychain. The relay is reachable only inside your Tailscale network and never stores conversation text in its logs.") }
+            Section("Privacy") { Text("The pairing token is stored in iPhone Keychain. Desktop activity stays in memory. In Meta mode, audio goes through your PC to Meta; local modes keep audio on this iPhone.") }
         }
         .navigationTitle("Pair Windows PC")
         .onAppear { endpoint = model.endpoint }
@@ -119,7 +119,7 @@ struct HistoryView: View {
                     }
                 }
             }.onDelete { offsets in offsets.map { model.sessions[$0].id }.forEach(model.deleteSession) }
-        }.navigationTitle("History")
+        }.scrollContentBackground(.hidden).background(MintTheme.background).navigationTitle("History").navigationBarTitleDisplayMode(.inline)
     }
 }
 

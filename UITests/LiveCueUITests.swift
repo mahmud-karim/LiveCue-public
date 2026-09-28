@@ -41,7 +41,12 @@ final class LiveCueUITests: XCTestCase {
         voz.name = "Voz on Assist"; voz.lifetime = .keepAlways; add(voz)
         app.buttons["end-session"].tap()
         XCTAssertTrue(app.buttons["start-session"].waitForExistence(timeout: 5))
-        app.tabBars.buttons["Live Parakeet"].tap()
+        app.tabBars.buttons["History"].tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "transcript segments")).firstMatch.waitForExistence(timeout: 5))
+        app.tabBars.buttons["Settings"].tap()
+        app.buttons["speech-provider"].tap()
+        app.buttons["Parakeet · local live"].tap()
+        app.tabBars.buttons["Live"].tap()
         app.buttons["download-model"].tap()
         app.buttons["Download & use"].tap()
         XCTAssertTrue(app.progressIndicators["model-download-progress"].waitForExistence(timeout: 5))
@@ -63,5 +68,12 @@ final class LiveCueUITests: XCTestCase {
         XCTAssertTrue(app.buttons["scan-pairing-qr"].waitForExistence(timeout: 5))
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "QR pairing"; shot.lifetime = .keepAlways; add(shot)
+    }
+    func testMintSettingsAndCloudDisclosure() {
+        let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(app.staticTexts["Midnight Mint"].exists || app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Midnight Mint")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Audio streams through your PC to Meta")).firstMatch.exists)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Midnight Mint Settings"; shot.lifetime = .keepAlways; add(shot)
     }
 }

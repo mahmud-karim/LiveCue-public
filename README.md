@@ -1,12 +1,14 @@
 # LiveCue
 
-LiveCue is a personal iPhone conversation assistant with public source code and a private Windows relay. Two tabs compare local transcription: **Voz on Assist** records in memory and transcribes on demand; **Live Parakeet** produces continuous captions. Both send only text context through Tailscale to Codex CLI on the owner's Windows PC.
+LiveCue is a personal iPhone conversation assistant with public source and a private Windows relay. Midnight Mint uses 16-point default body text (scaling with iOS Dynamic Type). **Meta Muse** streams live captions through your PC; **Voz on Assist** and **Live Parakeet** remain available under Settings as on-device alternatives. Assist sends the current text context to Codex CLI on your Windows PC.
 
-Requires iOS 18 or later. End the current conversation before switching tabs, then prepare that tab's model (downloads are cached). Voz shows audio duration and transcription wall time; Parakeet shows the last buffer's processing time, not end-to-end caption latency. Simulator UI tests use fixtures: real model speed and microphone behavior must be compared on the iPhone. The vendor's 10-minute/2-second claim is not a measured LiveCue result.
+Requires iOS 18 or later. End the current conversation before changing transcription provider. Local models require preparation; Meta needs no model download. Cloud shows first partial timing from stream start, which includes time spent speaking, not isolated inference latency. Simulator UI tests use fixtures; microphone hardware and actual latency require iPhone testing.
 
 ## Privacy and consent
 
-Always obtain the informed consent of everyone being recorded and follow local recording laws. LiveCue visibly indicates recording. Normal session audio is not saved; transcripts, answers, summaries, and notes remain locally on the iPhone until deleted. The Windows relay deliberately does not log request bodies or answers.
+Obtain informed consent before recording. Audio is not saved by LiveCue. In Meta mode it streams to Meta and incurs provider charges; local modes keep audio on the phone. Transcripts, answers and notes persist on the iPhone until deleted. Desktop shows conversation text in bounded memory, not disk logs. Provider processing is subject to Meta's terms; this is not a claim of zero provider retention.
+
+The Meta key is never in the phone app or GitHub. Windows launchers decrypt a CurrentUser DPAPI credential at `%LOCALAPPDATA%/LiveCue/meta-stt-key.xml` into only the relay child's environment. That file must be a `PSCredential` exported with `Export-Clixml` by the same Windows user; restrict its ACL to that user. No credentials are required for GitHub builds. Codex subprocesses do not inherit the Meta key. The native phone uses its existing Keychain pairing token over Tailscale WSS. The relay restricts cloud connections to one at a time, fixed PCM/model/endpoint, bounded buffers, idle timeout and 30-minute sessions. Pause/resume starts a fresh cloud stream; disconnections do not automatically retry billable requests. These are application limits, not a provider spending cap.
 
 ## First-time Windows setup
 
@@ -15,7 +17,7 @@ Always obtain the informed consent of everyone being recorded and follow local r
 3. In `Relay`, run `npm install` once.
 4. Double-click **LiveCue Desktop.cmd**, then click **Start relay**. Close an old relay terminal first if one is running. The desktop checks Codex/Tailscale and displays the PC endpoint.
 5. Click **Generate new pairing QR** if needed (this invalidates old pairing), then on iPhone open **Pair Windows PC → Scan PC QR code → Verify and pair**. Camera denial has a manual JSON fallback using the terminal launcher.
-6. Choose a tab, open **Model Library**, tap **Download & use**, go back, then start a conversation.
+6. Start a conversation for Meta live captions (requires the PC credential above). For local alternatives, select the provider in Settings, then prepare it in Model Library.
 
 The relay binds only to `127.0.0.1`; `tailscale serve` exposes it as private HTTPS inside the tailnet. To rotate the pairing token, use the desktop pairing button or run `./Start-LiveCueRelay.ps1 -ResetPairing`.
 
@@ -27,7 +29,7 @@ Model Library shows the SDK-reported download/setup percentage, byte/file counte
 
 ## Development and releases
 
-`project.yml` is the XcodeGen source of truth. GitHub's macOS runner generates the Xcode project, dynamically selects an available iPhone simulator, runs unit and UI tests, captures test evidence, then separately builds an unsigned ARM64 iPhoneOS app. The release job packages `Payload/LiveCue.app` as `LiveCue.ipa`, publishes it to the private GitHub release, re-downloads it, and verifies its checksum and structure.
+`project.yml` is the XcodeGen source of truth. GitHub's macOS runner runs simulator unit/UI tests, captures evidence, then separately builds an unsigned ARM64 iPhoneOS app. The release packages `Payload/LiveCue.app` as `LiveCue.ipa`, publishes it to the public GitHub release, re-downloads it, and verifies checksum and structure. Builds do not contact Meta or use provider credentials.
 
 The IPA is intended for LiveContainer. It is not signed for direct installation and is not an App Store/TestFlight build.
 
@@ -42,7 +44,7 @@ Public development repository: https://github.com/mahmud-karim/LiveCue-public. P
 
 ## Current v1 boundaries
 
-English only, no speaker diarization, no TTS, no invisible overlay, no lock-screen control, and no arbitrary third-party model source. Background microphone capture uses iOS audio background mode, but iOS can still interrupt recording for calls, route changes, or system policy.
+Local transcription targets English; Meta automatically detects supported languages. No diarization, TTS, invisible overlay, lock-screen control, or arbitrary model URLs. iOS can interrupt recording for calls, audio-route changes or system policy. Real-device cloud microphone behavior remains an on-device check.
 # Assistant model comparison (v0.4)
 
 On iPhone, open **Assistant models & timing** (or the model row during a conversation). Refresh the authenticated PC catalog, choose a model and supported reasoning level, then tap Assist. The selection also applies to session summaries. Models are sourced from the local Codex catalog; account access is confirmed only when a request succeeds. Service tier remains default.

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { CodexRunner } from "./codex.ts";
 import { bearerToken, verifyToken } from "./security.ts";
 import { modelCatalog, validateSelection } from "./models.ts";
+import { attachSpeech } from "./speech.ts";
 
 const maxBodyBytes = 128 * 1024;
 
@@ -10,7 +11,7 @@ export type RelayEvent = { type: string; [key: string]: unknown };
 export type RelayControls = { emit?: (event: RelayEvent) => void; accepting?: () => boolean };
 export function createLiveCueServer(tokenHash: string | (() => string), runner = new CodexRunner(), controls: RelayControls = {}) {
   let busy = false;
-  return createServer(async (request, response) => {
+  const server = createServer(async (request, response) => {
     setSecurityHeaders(response);
     let trackedId: string | undefined;
     const receivedAt = performance.now();
@@ -19,7 +20,7 @@ export function createLiveCueServer(tokenHash: string | (() => string), runner =
       authenticate(request, expectedHash);
       controls.emit?.({ type: "phone-seen", time: new Date().toISOString() });
       if (request.method === "GET" && request.url === "/v1/health") {
-        return json(response, 200, { ok: true });
+        return json(response, 200, { ok: true, cloudSpeechReady: Boolean(process.env.LIVECUE_META_API_KEY) });
       }
       if (request.method === "POST" && request.url === "/v1/pair/verify") return json(response, 200, { ok: true });
       if (request.method === "GET" && request.url === "/v1/models") return json(response, 200, { models: await modelCatalog() });
@@ -58,6 +59,8 @@ export function createLiveCueServer(tokenHash: string | (() => string), runner =
       json(response, status, { error: status === 500 ? "The local assistant request failed." : (error as Error).message });
     }
   });
+  attachSpeech(server, tokenHash, controls);
+  return server;
 }
 
 class HttpError extends Error {

@@ -23,7 +23,9 @@ export class CodexRunner {
       "-m", selection.model, "-c", "model_reasoning_effort=" + JSON.stringify(selection.reasoningEffort), "-c", "service_tier=\"default\"",
       "--output-schema", schema, "-o", output, "-C", work, "-"
     ];
-    const child = spawn(executable, args, { cwd: work, stdio: ["pipe", "ignore", "ignore"], windowsHide: true, shell: false });
+    const childEnv = { ...process.env };
+    delete childEnv.LIVECUE_META_API_KEY;
+    const child = spawn(executable, args, { cwd: work, env: childEnv, stdio: ["pipe", "ignore", "ignore"], windowsHide: true, shell: false });
     this.active.set(requestId, child);
     child.stdin.end(prompt);
     const timeout = setTimeout(() => child.kill(), timeoutMs);

@@ -21,7 +21,7 @@ final class AppModel: ObservableObject {
     @Published var elapsedSeconds = 0
     @Published var benchmarks: [BenchmarkResult] = []
 
-    @Published var mode = "voz"
+    @Published var mode = "meta"
     @Published var isPreparing = false
     @Published var isTransitioning = false
     @Published var assistStage = ""
@@ -68,7 +68,7 @@ final class AppModel: ObservableObject {
         repository = try! SessionRepository(inMemory: ProcessInfo.processInfo.arguments.contains("-ui-testing"))
         sessions = repository.all()
         transcriber.onFinalSegments = { [weak self] segments in self?.append(segments) }
-        transcriber.onError = { [weak self] message in self?.errorMessage = message }
+        transcriber.onError = { [weak self] message in self?.errorMessage = message; if self?.mode == "meta" { self?.isPaused = true } }
         transcriberObservation = transcriber.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         selectedModelVariant = nil
         if isUITesting {
@@ -129,7 +129,11 @@ final class AppModel: ObservableObject {
         guard activeSession == nil, !isTransitioning else { return }
         isTransitioning = true
         defer { isTransitioning = false }
-        guard selectedModel != nil else { errorMessage = "Choose and download a transcription model first."; return }
+        guard mode == "meta" || selectedModel != nil else { errorMessage = "Choose and download a transcription model first."; return }
+        if mode == "meta", !isUITesting {
+            guard isPaired, relayOnline, let token else { errorMessage = "Pair your Windows PC and start its relay first."; return }
+            transcriber.useCloud(); transcriber.cloudEndpoint = endpoint; transcriber.cloudToken = token; transcriber.cloudOffset = 0
+        }
         let granted: Bool
         if isUITesting { granted = true }
         else { granted = await AVAudioApplication.requestRecordPermission() }
@@ -139,6 +143,7 @@ final class AppModel: ObservableObject {
         lastAssistRequest = nil
         elapsedSeconds = 0
         isRecording = true
+        isPaused = false
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in Task { @MainActor in self?.elapsedSeconds += 1 } }
         do {
             if isUITesting {
@@ -154,7 +159,7 @@ final class AppModel: ObservableObject {
         isPaused.toggle()
         if isUITesting { return }
         if isPaused { do { try await transcriber.pause() } catch { errorMessage = error.localizedDescription } }
-        else { do { try await transcriber.start() } catch { errorMessage = error.localizedDescription } }
+        else { do { transcriber.cloudOffset = Double(elapsedSeconds); try await transcriber.start() } catch { isPaused = true; errorMessage = error.localizedDescription } }
     }
 
     func assist(reuseText: Bool = false) async {
@@ -168,7 +173,7 @@ final class AppModel: ObservableObject {
             assistStage = mode == "voz" ? "Transcribing…" : "Thinking…"
             let sttStarted = ProcessInfo.processInfo.systemUptime
             if !isUITesting && !reuseText { try await transcriber.transcribePending() }
-            let sttMs = reuseText || mode == "parakeet" ? 0 : (ProcessInfo.processInfo.systemUptime - sttStarted) * 1000
+            let sttMs = reuseText || mode != "voz" ? 0 : (ProcessInfo.processInfo.systemUptime - sttStarted) * 1000
             let contextStarted = ProcessInfo.processInfo.systemUptime
             guard let current = activeSession else { return }
             var request = reuseText ? (lastAssistRequest ?? ContextBuilder.makeRequest(session: current, partial: transcriber.partialText, instruction: instruction)) : ContextBuilder.makeRequest(session: current, partial: transcriber.partialText, instruction: instruction)
@@ -230,6 +235,7 @@ final class AppModel: ObservableObject {
     private func append(_ segments: [TranscriptSegment]) {
         guard var current = activeSession else { return }
         current.segments.append(contentsOf: segments)
+        if mode == "meta" { current.segments.sort { $0.startSeconds < $1.startSeconds } }
         activeSession = current
         try? repository.save(current)
     }

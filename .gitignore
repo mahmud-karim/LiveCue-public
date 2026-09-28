@@ -19,6 +19,9 @@ Relay/coverage/
 relay.json
 pairing*.json
 auth.json
+*key*.xml
+*credential*.xml
+*secret*.json
 *.log
 *.wav
 *.m4a

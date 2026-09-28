@@ -55,7 +55,10 @@ $env:LIVECUE_PORT = '47831'
 Write-Host "`nLiveCue will be private at $publicEndpoint" -ForegroundColor Cyan
 Push-Location $relayRoot
 try {
+    . (Join-Path $PSScriptRoot 'Load-LiveCueSpeechKey.ps1')
+    $env:LIVECUE_META_API_KEY = Get-LiveCueSpeechKey
     if ($ResetPairing) { npm run reset-pairing } else { npm start }
 } finally {
+    Remove-Item Env:LIVECUE_META_API_KEY -ErrorAction SilentlyContinue
     Pop-Location
 }

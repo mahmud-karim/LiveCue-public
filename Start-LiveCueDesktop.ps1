@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param([switch]$SelfTest, [string]$EvidencePath, [switch]$AutoStart, [switch]$TestExpanded)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Load-LiveCueSpeechKey.ps1')
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 [xml]$layout = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Desktop.xaml')
 $window = [Windows.Markup.XamlReader]::Load((New-Object Xml.XmlNodeReader $layout))
@@ -51,6 +52,8 @@ function Stop-Relay {
 }
 function Handle-Event($event) {
     switch ($event.type) {
+        'speech-status' { Add-Activity ([string]$event.message); $ui.TranscriptHint.Text = [string]$event.message }
+        'speech-text' { $ui.Transcript.AppendText(([string]$event.text + "`r`n")); if ($ui.Transcript.Text.Length -gt 64000) { $ui.Transcript.Text = $ui.Transcript.Text.Substring($ui.Transcript.Text.Length - 48000) }; $ui.Transcript.ScrollToEnd() }
         'ready' {
             $ui.StartButton.IsEnabled = $false
             $ui.Status.Text = 'Ready'; $ui.Endpoint.Text = [string]$event.endpoint
@@ -124,10 +127,14 @@ function Start-Relay {
         $info.Arguments = '--experimental-strip-types "' + (Join-Path $PSScriptRoot 'Relay\src\desktop.ts') + '"'
         $info.WorkingDirectory = Join-Path $PSScriptRoot 'Relay'
         $info.UseShellExecute = $false; $info.CreateNoWindow = $true
+        $speechKey = Get-LiveCueSpeechKey
+        if ($speechKey) { $info.EnvironmentVariables['LIVECUE_META_API_KEY'] = $speechKey }
+        $speechKey = $null
         $info.RedirectStandardInput = $true; $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
         $script:relayProcess = New-Object Diagnostics.Process
         $script:relayProcess.StartInfo = $info
         $null = $script:relayProcess.Start()
+        $info.EnvironmentVariables.Remove('LIVECUE_META_API_KEY')
         $script:readTask = $script:relayProcess.StandardOutput.ReadLineAsync()
         $script:errorTask = $script:relayProcess.StandardError.ReadLineAsync()
         $ui.Activity.Clear()
