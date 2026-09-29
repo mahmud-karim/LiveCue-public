@@ -48,6 +48,36 @@ test("unknown speech model is rejected without launching a process", async () =>
   await once(phone, "error"); assert.equal(calls, 0); server.close();
 });
 
+test("failed local startup reports a safe error and never falls back to Meta", async () => {
+  const server = createServer(); let metaCalls = 0, connections = 0;
+  attachSpeech(server, hashToken("paired"), {}, () => { metaCalls++; throw Error(); }, "fixture-key", {
+    prepare: async () => { throw Error("private diagnostic must not escape"); },
+    connect: () => { connections++; throw Error(); }
+  });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const phone = new WebSocket(`ws://127.0.0.1:${(server.address() as any).port}/v1/speech`, { headers: { Authorization: "Bearer paired", "X-LiveCue-Speech-Model": "nemotron" } });
+  const frames: any[] = []; phone.on("message", raw => frames.push(JSON.parse(raw.toString())));
+  await once(phone, "close");
+  assert.ok(frames.some(f => f.type === "error")); assert.equal(metaCalls, 0); assert.equal(connections, 0);
+  assert.equal(JSON.stringify(frames).includes("private diagnostic"), false); server.close();
+});
+
+test("model loading keeps the single-stream lease after phone disconnect", async () => {
+  const server = createServer(); let finishLoad!: () => void;
+  const pending = new Promise<void>(resolve => { finishLoad = resolve; });
+  attachSpeech(server, hashToken("paired"), {}, () => { throw Error(); }, "", {
+    prepare: async () => pending, connect: () => { throw Error("Must not connect after disconnect"); }
+  });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const address = `ws://127.0.0.1:${(server.address() as any).port}/v1/speech`;
+  const options = { headers: { Authorization: "Bearer paired", "X-LiveCue-Speech-Model": "qwen3" } };
+  const first = new WebSocket(address, options); await once(first, "message"); first.close(); await once(first, "close");
+  const second = new WebSocket(address, options);
+  const rejected = new Promise<number>(resolve => second.on("unexpected-response", (_request, response) => { response.resume(); second.terminate(); resolve(response.statusCode!); }));
+  second.on("error", () => {}); assert.equal(await rejected, 429);
+  finishLoad(); server.close();
+});
+
 test("speech rejects unauthenticated, browser, missing-key and paused connections", async () => {
   for (const setup of [{ auth: false }, { origin: true }, { missing: true }, { paused: true }]) {
     const server = createServer(); let calls = 0;
