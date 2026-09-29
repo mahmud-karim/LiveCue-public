@@ -7,6 +7,10 @@ on:
         description: Release tag to create
         required: true
         default: v0.5.2
+      reuse_simulator_run:
+        description: Optional passing simulator run from the last 24h; only bundle-version metadata repairs may reuse it
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -15,7 +19,28 @@ env:
   DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
 
 jobs:
+  verify-test-reuse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      reused: ${{ steps.verify.outputs.reused }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: python3 -m unittest discover -s Scripts -p test_verify_test_reuse.py
+      - id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_SIMULATOR_RUN: ${{ inputs.reuse_simulator_run }}
+        run: python3 Scripts/verify_test_reuse.py
+
   simulator-test:
+    needs: verify-test-reuse
+    if: needs.verify-test-reuse.outputs.reused != 'true'
     # FluidAudio's pinned NeMo simulator artifact requires Apple Silicon.
     runs-on: macos-26
     timeout-minutes: 40
@@ -59,7 +84,8 @@ jobs:
           retention-days: 14
 
   build-and-release:
-    needs: simulator-test
+    needs: [verify-test-reuse, simulator-test]
+    if: ${{ always() && needs.verify-test-reuse.result == 'success' && (needs.simulator-test.result == 'success' || needs.verify-test-reuse.outputs.reused == 'true') }}
     permissions:
       contents: write
     runs-on: macos-15
