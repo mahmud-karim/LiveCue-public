@@ -22,7 +22,7 @@ struct PairingView: View {
                 Button("Verify and pair") { Task { await model.pair(endpoint: endpoint, token: token) } }.disabled(endpoint.isEmpty || token.isEmpty)
                 if model.relayOnline { Label("PC connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
             }
-            Section("Privacy") { Text("The pairing token is stored in iPhone Keychain. Desktop activity stays in memory. In Meta mode, audio goes through your PC to Meta; local modes keep audio on this iPhone.") }
+            Section("Privacy") { Text("The pairing token is stored in iPhone Keychain. Meta mode sends audio through your PC to Meta. Nemotron and Qwen3 send audio to your PC only. Voz and Parakeet transcribe on this iPhone. Desktop activity stays in memory.") }
         }
         .navigationTitle("Pair Windows PC")
         .onAppear { endpoint = model.endpoint }
@@ -117,7 +117,7 @@ struct HistoryView: View {
                         Text(session.startedAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
                         Text("\(session.segments.count) transcript segments · \(session.assistantTurns.count) assists").font(.caption).foregroundStyle(.secondary)
                         if let usage = session.transcriptionUsage {
-                            Text("Est. transcription · " + usage.formattedCost + " USD" + (usage.incomplete ? " · incomplete" : ""))
+                            Text((SpeechProvider(rawValue: usage.provider)?.name ?? "Transcription") + " · " + usage.formattedCost + " USD" + (usage.incomplete ? " · incomplete" : ""))
                                 .font(.caption.monospacedDigit()).foregroundStyle(MintTheme.mint).accessibilityIdentifier("history-transcription-cost")
                         }
                     }
