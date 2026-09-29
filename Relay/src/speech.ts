@@ -2,11 +2,13 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { Server } from "node:http";
 import { bearerToken, verifyToken } from "./security.ts";
 import type { RelayControls } from "./server.ts";
+import { localSpeech, prepareLocalModel, connectLocal } from "./local-asr.ts";
 
 // Fixed destination and format: phones never choose an upstream URL or receive a provider key.
 export function attachSpeech(server: Server, tokenHash: string | (() => string), controls: RelayControls,
   connect = () => new WebSocket("wss://api.meta.ai/v1/asr/realtime", { maxPayload: 128 * 1024, handshakeTimeout: 15000 }),
-  apiKey = process.env.LIVECUE_META_API_KEY) {
+  apiKey = process.env.LIVECUE_META_API_KEY,
+  local = { prepare: prepareLocalModel, connect: connectLocal }) {
   const hub = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024, perMessageDeflate: false });
   let active = false;
   const hash = () => typeof tokenHash === "function" ? tokenHash() : tokenHash;
@@ -16,10 +18,16 @@ export function attachSpeech(server: Server, tokenHash: string | (() => string),
     if (request.url !== "/v1/speech") return reject(404);
     // Browser origins are not supported; pairing credentials belong to the native app.
     if (request.headers.origin || !token || !verifyToken(token, hash())) return reject(401);
-    if (!apiKey || controls.accepting?.() === false) return reject(503);
+    const provider = request.headers["x-livecue-speech-model"] ?? "meta";
+    if (!["meta", "nemotron", "qwen3"].includes(provider as string)) return reject(400);
+    if ((provider === "meta" && !apiKey) || controls.accepting?.() === false) return reject(503);
     if (active) return reject(429);
     hub.handleUpgrade(request, socket, head, phone => {
       active = true;
+      if (provider === "nemotron" || provider === "qwen3") {
+        localSpeech(phone, provider, () => verifyToken(token, hash()), controls, () => { active = false; }, local.prepare, local.connect);
+        return;
+      }
       let upstream: WebSocket;
       try { upstream = connect(); } catch { active = false; phone.close(1011); return; }
       const started = performance.now();
@@ -47,7 +55,7 @@ export function attachSpeech(server: Server, tokenHash: string | (() => string),
           const event = JSON.parse(raw.toString());
           if (!ready) {
             if (typeof event.sessionId !== "string") return finish("Meta authentication failed. Check the PC's API key and billing.");
-            ready = true; send({ type: "ready", handshakeMs: performance.now() - started });
+            ready = true; send({ type: "ready", provider: "meta", sampleRate: 24000, handshakeMs: performance.now() - started });
             controls.emit?.({ type: "speech-status", message: "Meta Muse connected. Streaming live audio." });
             return;
           }

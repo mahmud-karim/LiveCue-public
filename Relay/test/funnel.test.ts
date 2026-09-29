@@ -17,7 +17,7 @@ test('Funnel native bearer isolation, allowlist, bounded bodies, HTTP and binary
     hits++; headers = req.headers; req.resume(); req.on('end', () => { res.setHeader('Set-Cookie', 'should-not-leak=test'); res.end('{"ok":true}'); });
   });
   const hub = new WebSocketServer({server: upstream, verifyClient: ({req}) => valid(req)});
-  hub.on('connection', ws => ws.on('message', (data, binary) => ws.send(data, {binary})));
+  hub.on('connection', (ws, req) => { headers = req.headers; ws.on('message', (data, binary) => ws.send(data, {binary})); });
   upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening');
   const proxy = createLiveCueProxy({port: (upstream.address() as any).port});
   const gateway = http.createServer((req, res) => { if (!proxy.request(req, res)) { res.writeHead(404); res.end(); } });
@@ -38,8 +38,9 @@ test('Funnel native bearer isolation, allowlist, bounded bodies, HTTP and binary
     assert.deepEqual(await result.json(),{ok:true}); assert.equal(headers.cookie,undefined); assert.equal(headers['x-hermes-session-token'],undefined);
     assert.equal((await fetch(base+'/v1/pair/verify',{method:'POST',headers:{authorization},body:'{}'})).status,200);
     assert.equal((await fetch(base+'/v1/assist',{method:'POST',headers:{authorization},body:'x'.repeat(128*1024+1)})).status,413);
-    const ws = new WebSocket(base.replace('http:','ws:')+'/v1/speech',{headers:{authorization}});
+    const ws = new WebSocket(base.replace('http:','ws:')+'/v1/speech',{headers:{authorization,'x-livecue-speech-model':'qwen3'}});
     await once(ws,'open');
+    assert.equal(headers['x-livecue-speech-model'], 'qwen3');
     const received = once(ws,'message'); const pcm = Buffer.from([0,1,2,3,255,128]); ws.send(pcm);
     const [payload,binary] = await received; assert.equal(binary,true); assert.deepEqual(payload,pcm);
     const textMessage = once(ws,'message'); ws.send('{"type":"endStream"}'); assert.equal((await textMessage)[0].toString(),'{"type":"endStream"}');

@@ -6,7 +6,7 @@ on:
       release_tag:
         description: Release tag to create
         required: true
-        default: v0.5.1
+        default: v0.5.2
 
 permissions:
   contents: read

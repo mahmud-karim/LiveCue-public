@@ -23,7 +23,10 @@ final class AppModel: ObservableObject {
     @Published var elapsedSeconds = 0
     @Published var benchmarks: [BenchmarkResult] = []
 
-    @Published var mode = "meta" { didSet { if oldValue != mode { selectedModelVariant = nil } } }
+    @Published var mode = SpeechProvider(rawValue: UserDefaults.standard.string(forKey: "speechProvider") ?? "")?.rawValue ?? "meta" {
+        didSet { if oldValue != mode { selectedModelVariant = nil }; UserDefaults.standard.set(mode, forKey: "speechProvider") }
+    }
+    var speechProvider: SpeechProvider { SpeechProvider(rawValue: mode) ?? .meta }
     @Published var isPreparing = false
     @Published var isTransitioning = false
     @Published var assistStage = ""
@@ -73,10 +76,11 @@ final class AppModel: ObservableObject {
         repository = try! SessionRepository(inMemory: ProcessInfo.processInfo.arguments.contains("-ui-testing"))
         sessions = repository.all()
         transcriber.onFinalSegments = { [weak self] segments in self?.append(segments) }
-        transcriber.onError = { [weak self] message in self?.errorMessage = message; if self?.mode == "meta" { self?.isPaused = true } }
+        transcriber.onError = { [weak self] message in self?.errorMessage = message; if self?.speechProvider.usesPC == true { self?.isPaused = true } }
         transcriberObservation = transcriber.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         selectedModelVariant = nil
         if isUITesting {
+            mode = "meta"
             assistantConfiguration = AssistantConfiguration()
             selectedModelVariant = "voz"
             endpoint = "https://livecue.test"
@@ -135,20 +139,20 @@ final class AppModel: ObservableObject {
         guard activeSession == nil, !isTransitioning else { return }
         isTransitioning = true
         defer { isTransitioning = false }
-        guard mode == "meta" || selectedModel != nil else { errorMessage = "Choose and download a transcription model first."; return }
-        if mode == "meta", !isUITesting {
+        guard speechProvider.usesPC || selectedModel != nil else { errorMessage = "Choose and download a transcription model first."; return }
+        if speechProvider.usesPC, !isUITesting {
             guard isPaired, relayOnline, let token else { errorMessage = "Pair your Windows PC and start its relay first."; return }
-            transcriber.useCloud(); transcriber.cloudEndpoint = endpoint; transcriber.cloudToken = token; transcriber.cloudOffset = 0
+            transcriber.useCloud(provider: speechProvider); transcriber.cloudEndpoint = endpoint; transcriber.cloudToken = token; transcriber.cloudOffset = 0
         }
         let granted: Bool
         if isUITesting { granted = true }
         else { granted = await AVAudioApplication.requestRecordPermission() }
         guard granted else { errorMessage = "Microphone permission is required for live transcription."; return }
         activeSession = Session()
-        transcriber.resetCloudUsage()
+        transcriber.resetCloudUsage(provider: mode)
         activeSession?.transcriptionUsage = TranscriptionUsage(provider: mode)
         fixtureUsage = TranscriptionUsage(provider: mode); fixtureStream = UUID(); fixtureStreamSeconds = 0
-        if isUITesting && mode == "meta" { fixtureUsage.begin(fixtureStream) }
+        if isUITesting && speechProvider.usesPC { fixtureUsage.begin(fixtureStream) }
         latestAnswer = nil
         lastAssistRequest = nil
         elapsedSeconds = 0
@@ -261,7 +265,7 @@ final class AppModel: ObservableObject {
     private func tick() {
         guard activeSession != nil else { return }
         elapsedSeconds += 1
-        if isUITesting, mode == "meta", !isPaused, !isTransitioning {
+        if isUITesting, speechProvider.usesPC, !isPaused, !isTransitioning {
             fixtureStreamSeconds += 1
             fixtureUsage.update(fixtureStream, sentMs: Double(fixtureStreamSeconds * 1000), processedMs: Double(fixtureStreamSeconds * 1000), hasTranscript: true)
             transcriber.energy = Float(0.025 + 0.02 * sin(Double(elapsedSeconds)))
@@ -271,7 +275,7 @@ final class AppModel: ObservableObject {
 
     private func captureUsage() {
         guard var current = activeSession else { return }
-        if mode == "meta" { current.transcriptionUsage = isUITesting ? fixtureUsage : transcriber.cloudUsage }
+        if speechProvider.usesPC { current.transcriptionUsage = isUITesting ? fixtureUsage : transcriber.cloudUsage }
         activeSession = current
         try? repository.save(current)
     }
@@ -279,7 +283,7 @@ final class AppModel: ObservableObject {
     private func append(_ segments: [TranscriptSegment]) {
         guard var current = activeSession else { return }
         current.segments.append(contentsOf: segments)
-        if mode == "meta" { current.segments.sort { $0.startSeconds < $1.startSeconds } }
+        if speechProvider.usesPC { current.segments.sort { $0.startSeconds < $1.startSeconds } }
         activeSession = current
         try? repository.save(current)
     }

@@ -19,14 +19,14 @@ struct SettingsView: View {
         Form {
             Section("Transcription & AI") {
                 NavigationLink { SpeechProviderView() } label: {
-                    LabeledContent("Transcription", value: model.mode == "meta" ? "Meta Muse" : model.mode.capitalized)
+                    LabeledContent("Transcription", value: model.speechProvider.name)
                 }.disabled(model.activeSession != nil || model.isPreparing).accessibilityIdentifier("speech-provider")
-                if model.mode != "meta" {
+                if !model.speechProvider.usesPC {
                     NavigationLink("Model Library") { ModelLibraryView() }
                     NavigationLink("Speech benchmark") { ModelLabView() }
                 }
                 NavigationLink { AssistantLabView() } label: { Label("Assistant models & timing", systemImage: "slider.horizontal.3") }.accessibilityIdentifier("assistant-lab")
-                Text(model.mode == "meta" ? "Audio streams through your PC to Meta. No model download. Cloud usage is billed by Meta. Recording stops if the connection fails; resume to reconnect." : "Audio is transcribed on this iPhone. Only text is sent to your PC.").font(.system(size: 13)).foregroundStyle(.secondary)
+                Text(model.mode == "meta" ? "Audio streams through your PC to Meta. No model download. Cloud usage is billed by Meta. Recording stops if the connection fails; resume to reconnect." : model.speechProvider.isPCLocal ? "Audio streams to the model on your PC's GPU. No speech API charges. Keep Docker Desktop and LiveCue Desktop running. Switching models may take a minute; recording starts only when ready." : "Audio is transcribed on this iPhone. Only text is sent to your PC.").font(.system(size: 13)).foregroundStyle(.secondary)
             }
             Section("Assistant instructions") {
                 TextField("Optional instruction (e.g. answer briefly)", text: $model.instruction, axis: .vertical)
@@ -36,6 +36,7 @@ struct SettingsView: View {
             }
             Section("Transcription cost") {
                 LabeledContent("Meta Muse rate", value: "$0.18 / hour")
+                LabeledContent("PC-local models", value: "$0 API usage")
                 Text("Live estimates use audio sent; completed streams use Meta's reported processed audio, rounded down to whole seconds per stream. Silence sent to Meta counts as audio. Credits and billing adjustments are not included. Interrupted streams may have incomplete usage. This estimates transcription only, not assistant usage.").font(.caption).foregroundStyle(.secondary)
                 Link("Meta pricing & usage documentation", destination: URL(string: "https://dev.meta.ai/docs/speech-to-text#pricing")!)
             }
@@ -63,7 +64,7 @@ struct SettingsView: View {
 private struct SpeechProviderView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    private let options = [("meta", "Meta Muse · live cloud"), ("voz", "Voz · local on Assist"), ("parakeet", "Parakeet · local live")]
+    private let options = [("meta", "Meta Muse · live cloud"), ("nemotron", "Nemotron 3.5 · PC live"), ("qwen3", "Qwen3 1.7B · PC live"), ("voz", "Voz · iPhone on Assist"), ("parakeet", "Parakeet · iPhone live")]
     var body: some View {
         List {
             ForEach(options, id: \.0) { option in
@@ -71,6 +72,7 @@ private struct SpeechProviderView: View {
                     HStack { Text(option.1); Spacer(); if model.mode == option.0 { Image(systemName: "checkmark") } }
                 }.accessibilityIdentifier("provider-" + option.0)
             }
+            Text("PC models run one at a time on your GPU. Start a new conversation to compare them. Neither sends audio to Meta.").font(.caption).foregroundStyle(.secondary)
         }.navigationTitle("Transcription").navigationBarTitleDisplayMode(.inline)
     }
 }

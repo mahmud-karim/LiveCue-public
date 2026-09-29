@@ -50,7 +50,7 @@ struct HomeView: View {
                 VoiceArtwork(level: 0, listening: false, homeIcon: true).frame(height: compact ? 88 : 120)
                 Text("LiveCue").font(.system(size: compact ? 30 : 36, weight: .bold))
                 Text("A clearer conversation.").font(.system(size: compact ? 17 : 20)).foregroundStyle(.secondary)
-                Text(model.mode == "meta" ? "Live captions with Meta Muse.\nTap Assist for an answer from your PC." : "Transcription on your iPhone.\nTap Assist for an answer from your PC.")
+                Text(model.mode == "meta" ? "Live captions with Meta Muse.\nTap Assist for an answer from your PC." : model.speechProvider.isPCLocal ? "Live captions on your PC's GPU.\nTap Assist for an answer from your PC." : "Transcription on your iPhone.\nTap Assist for an answer from your PC.")
                     .font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                 Label(model.relayOnline ? "PC online" : "PC offline", systemImage: "circle.fill")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(model.relayOnline ? MintTheme.mint : .orange)
@@ -60,23 +60,23 @@ struct HomeView: View {
                 HStack {
                     Label("System readiness", systemImage: "checklist").font(.system(size: 16, weight: .semibold))
                     Spacer()
-                    Text(model.relayOnline && (model.mode == "meta" || model.selectedModel != nil) ? "✓ Ready" : "Setup")
+                    Text(model.relayOnline && (model.speechProvider.usesPC || model.selectedModel != nil) ? "✓ Ready" : "Setup")
                         .font(.system(size: 12, weight: .medium)).foregroundStyle(MintTheme.mint)
                 }
                 HStack {
                     Label("Transcription", systemImage: "waveform"); Spacer()
-                    Text(model.mode == "meta" ? "Meta Muse · cloud" : model.selectedModel?.displayName ?? "Not configured").foregroundStyle(.secondary)
+                    Text(model.speechProvider.usesPC ? model.speechProvider.name : model.selectedModel?.displayName ?? "Not configured").foregroundStyle(.secondary)
                 }.font(.system(size: 13))
                 Divider().overlay(MintTheme.mint.opacity(0.08))
                 HStack { Label("Windows relay", systemImage: "desktopcomputer"); Spacer(); Text(model.isPaired ? "Paired" : "Pairing required").foregroundStyle(.secondary) }.font(.system(size: 13))
             }.padding(compact ? 12 : 15).glowPanel()
             VStack(spacing: compact ? 8 : 10) {
                 NavigationLink { PairingView() } label: { SetupRow(icon: "desktopcomputer", title: "Pair Windows PC", detail: model.isPaired ? "Configured" : "Required", compact: compact) }.accessibilityIdentifier("pair-pc")
-                NavigationLink { SettingsView() } label: { SetupRow(icon: "waveform", title: "Transcription & appearance", detail: "Cloud or on-device speech", compact: compact) }
+                NavigationLink { SettingsView() } label: { SetupRow(icon: "waveform", title: "Transcription & appearance", detail: "Cloud, PC or iPhone speech", compact: compact) }
                 NavigationLink { AssistantLabView() } label: { SetupRow(icon: "slider.horizontal.3", title: "Assistant models & timing", detail: model.assistantConfiguration.model, compact: compact) }.accessibilityIdentifier("assistant-lab")
             }
             Spacer(minLength: 0)
-            if model.mode != "meta" && model.selectedModel == nil {
+            if !model.speechProvider.usesPC && model.selectedModel == nil {
                 NavigationLink { ModelLibraryView() } label: { Label("Download a transcription model", systemImage: "arrow.down.circle.fill").frame(maxWidth: .infinity) }
                     .buttonStyle(MintActionStyle()).accessibilityIdentifier("download-model")
             } else {
@@ -148,12 +148,12 @@ struct LiveSessionView: View {
             HStack(spacing: 8) {
                 Circle().fill(model.isPaused ? .orange : MintTheme.mint).frame(width: 8, height: 8)
                 Text(model.isTransitioning ? "Updating…" : model.isPaused ? "Paused" : "Listening").foregroundStyle(MintTheme.mint)
-                Text(model.mode == "meta" ? "Muse Voice" : model.mode.capitalized).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(model.speechProvider.name).font(.system(size: 12)).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 Text(String(format: "%02d:%02d", model.elapsedSeconds / 60, model.elapsedSeconds % 60)).monospacedDigit()
             }.font(.system(size: 16))
             HStack {
-                Text(model.mode == "meta" ? "Est. transcription" : "On-device transcription")
+                Text(model.mode == "meta" ? "Est. transcription" : model.speechProvider.isPCLocal ? "PC-local · no API cost" : "On-device transcription")
                 Spacer()
                 Text((model.activeSession?.transcriptionUsage?.formattedCost ?? "$0.00000") + " USD")
                     .monospacedDigit().accessibilityIdentifier("live-transcription-cost")

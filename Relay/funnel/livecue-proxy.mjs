@@ -62,6 +62,7 @@ export function createLiveCueProxy({port = 47831} = {}) {
       let peer;
       const upstream = http.request({hostname: '127.0.0.1', port, path: '/v1/speech', headers: {
         authorization: req.headers.authorization, connection: 'Upgrade', upgrade: 'websocket',
+        'x-livecue-speech-model': req.headers['x-livecue-speech-model'] || 'meta',
         'sec-websocket-key': req.headers['sec-websocket-key'] || '',
         'sec-websocket-version': req.headers['sec-websocket-version'] || ''
       }});

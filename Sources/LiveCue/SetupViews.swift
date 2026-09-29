@@ -134,7 +134,9 @@ struct SessionDetailView: View {
             if let usage = session.transcriptionUsage {
                 Section("Transcription usage") {
                     LabeledContent("Estimated cost", value: usage.formattedCost + " USD")
-                    LabeledContent("Provider", value: usage.provider == "meta" ? "Meta Muse" : "On-device")
+                    LabeledContent("Provider", value: SpeechProvider(rawValue: usage.provider)?.name ?? "On-device")
+                    if let ms = usage.firstTextMs { LabeledContent("First words from stream start", value: String(format: "%.2f s", ms / 1000)) }
+                    if let ms = usage.finalizationMs { LabeledContent("Last stream finalization", value: String(format: "%.2f s", ms / 1000)) }
                     if usage.provider == "meta" {
                         LabeledContent("Processed audio reported", value: String(format: "%.0f seconds", usage.reportedSeconds))
                         LabeledContent("Streams", value: "\(usage.streams.count)")

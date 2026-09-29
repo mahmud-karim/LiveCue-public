@@ -6,6 +6,8 @@ public struct TranscriptionUsage: Codable, Equatable, Sendable {
     public var provider: String
     public var hourlyRateUSD: Double
     public var pricingDate: String
+    public var firstTextMs: Double?
+    public var finalizationMs: Double?
     public private(set) var streams: [SpeechStreamUsage] = []
 
     public init(provider: String = "meta") {

@@ -1,6 +1,32 @@
 import XCTest
 
 final class LiveCueUITests: XCTestCase {
+    func testPCLocalSpeechChoicesAndZeroCostHistory() {
+        let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
+        for provider in ["nemotron", "qwen3"] {
+            app.tabBars.buttons["Settings"].tap()
+            app.buttons["speech-provider"].tap()
+            XCTAssertTrue(app.buttons["provider-" + provider].waitForExistence(timeout: 5))
+            let picker = XCTAttachment(screenshot: app.screenshot()); picker.name = "PC speech model choices"; picker.lifetime = .keepAlways; add(picker)
+            app.buttons["provider-" + provider].tap()
+            app.tabBars.buttons["Live"].tap()
+            XCTAssertFalse(app.buttons["download-model"].exists)
+            app.buttons["start-session"].tap()
+            XCTAssertTrue(app.staticTexts["PC-local · no API cost"].waitForExistence(timeout: 5))
+            XCTAssertEqual(app.staticTexts["live-transcription-cost"].label, "$0.00000 USD")
+            let live = XCTAttachment(screenshot: app.screenshot()); live.name = provider + " live conversation"; live.lifetime = .keepAlways; add(live)
+            app.buttons["assist-button"].tap()
+            XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 5))
+            app.buttons["dismiss-answer"].tap()
+            app.buttons["pause-session"].tap()
+            XCTAssertTrue(app.staticTexts["Paused"].waitForExistence(timeout: 5))
+            app.buttons["end-session"].tap()
+            XCTAssertTrue(app.buttons["start-session"].waitForExistence(timeout: 5))
+            app.tabBars.buttons["History"].tap()
+            XCTAssertTrue(app.staticTexts["history-transcription-cost"].firstMatch.waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["history-transcription-cost"].firstMatch.label.contains("$0.00000"))
+        }
+    }
     func testAssistantSelectionAndTiming() {
         let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
         app.buttons["start-session"].tap()

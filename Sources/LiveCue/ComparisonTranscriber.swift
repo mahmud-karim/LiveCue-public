@@ -31,9 +31,9 @@ final class ComparisonTranscriber: ObservableObject {
     var cloudToken = ""
     var cloudOffset = 0.0
     var cloudUsage: TranscriptionUsage { cloud.usage }
-    func resetCloudUsage() { cloud.resetUsage() }
-    func useCloud() {
-        variant = "meta"
+    func resetCloudUsage(provider: String) { cloud.resetUsage(provider: provider) }
+    func useCloud(provider: SpeechProvider) {
+        variant = provider.rawValue
         cloud.onUpdate = { [weak self] partial, energy, timing in self?.partialText = partial; self?.energy = energy; self?.timing = timing }
         cloud.onFinal = { [weak self] segments in self?.onFinalSegments?(segments) }
         cloud.onError = { [weak self] message in self?.onError?(message) }
@@ -88,7 +88,7 @@ final class ComparisonTranscriber: ObservableObject {
         } catch { status = "Preparation failed"; throw error }
     }
     func start() async throws {
-        if variant == "meta" { try await cloud.start(endpoint: cloudEndpoint, token: cloudToken, offset: cloudOffset); status = "Listening"; return }
+        if let provider = SpeechProvider(rawValue: variant), provider.usesPC { try await cloud.start(endpoint: cloudEndpoint, token: cloudToken, offset: cloudOffset, provider: provider); status = "Listening"; return }
         guard engine == nil else { return }
         generation = UUID(); let id = generation
         partialText = ""; timing = ""; samples = []; cursor = 0
@@ -163,7 +163,7 @@ final class ComparisonTranscriber: ObservableObject {
         status = engine == nil ? "Paused" : "Recording"
     }
     func pause() async throws {
-        if variant == "meta" { try await cloud.pause(); status = "Paused"; energy = 0; return }
+        if SpeechProvider(rawValue: variant)?.usesPC == true { try await cloud.pause(); status = "Paused"; energy = 0; return }
         engine?.inputNode.removeTap(onBus: 0); engine?.stop(); engine = nil
         continuation?.finish(); continuation = nil
         await consumer?.value; consumer = nil
