@@ -4,6 +4,7 @@ import SwiftUI
 struct VoiceArtwork: View {
     let level: Float
     let listening: Bool
+    var homeIcon = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var strength: Double { listening ? min(1, max(0, Double(level) * 16)) : 0 }
     var body: some View {
@@ -11,7 +12,7 @@ struct VoiceArtwork: View {
             let phase = listening && !reduceMotion && strength > 0.025 ? timeline.date.timeIntervalSinceReferenceDate * 1.8 : 0
             GeometryReader { geometry in
                 ZStack {
-                    RadialGradient(colors: [MintTheme.mint.opacity(0.13 + strength * 0.13), .clear], center: .center, startRadius: 8, endRadius: geometry.size.width * 0.48)
+                    RadialGradient(colors: [MintTheme.mint.opacity(0.24 + strength * 0.15), .clear], center: .center, startRadius: 5, endRadius: geometry.size.height * 0.5)
                     Canvas { context, size in
                         for line in 0..<18 {
                             var path = Path()
@@ -25,8 +26,10 @@ struct VoiceArtwork: View {
                             context.stroke(path, with: .color(MintTheme.mint.opacity(0.08 + Double(line) * 0.011)), lineWidth: 0.65)
                         }
                     }
-                    Circle().fill(MintTheme.background.opacity(0.8)).overlay(Circle().stroke(MintTheme.mint.opacity(0.4), lineWidth: 1))
-                        .shadow(color: MintTheme.mint.opacity(0.22 + strength * 0.2), radius: 18)
+                    RoundedRectangle(cornerRadius: homeIcon ? geometry.size.height * 0.2 : geometry.size.height, style: .continuous)
+                        .fill(LinearGradient(colors: [MintTheme.teal.opacity(0.8), MintTheme.background], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .overlay(RoundedRectangle(cornerRadius: homeIcon ? geometry.size.height * 0.2 : geometry.size.height, style: .continuous).stroke(MintTheme.mint.opacity(0.65), lineWidth: 1))
+                        .shadow(color: MintTheme.mint.opacity(0.3 + strength * 0.2), radius: 10)
                         .frame(width: geometry.size.height * 0.82, height: geometry.size.height * 0.82)
                     HStack(spacing: 5) {
                         ForEach(0..<5) { index in

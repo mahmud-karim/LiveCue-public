@@ -47,7 +47,7 @@ struct HomeView: View {
     private func content(compact: Bool) -> some View {
         VStack(spacing: compact ? 10 : 14) {
             VStack(spacing: compact ? 5 : 8) {
-                VoiceArtwork(level: 0, listening: false).frame(height: compact ? 88 : 120)
+                VoiceArtwork(level: 0, listening: false, homeIcon: true).frame(height: compact ? 88 : 120)
                 Text("LiveCue").font(.system(size: compact ? 30 : 36, weight: .bold))
                 Text("A clearer conversation.").font(.system(size: compact ? 17 : 20)).foregroundStyle(.secondary)
                 Text(model.mode == "meta" ? "Live captions with Meta Muse.\nTap Assist for an answer from your PC." : "Transcription on your iPhone.\nTap Assist for an answer from your PC.")
@@ -97,8 +97,8 @@ private struct SetupRow: View {
                 .frame(width: compact ? 38 : 44, height: compact ? 38 : 44)
                 .background(MintTheme.teal.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 15, weight: .medium))
-                Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(title).font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
+                Text(detail).font(.system(size: 12)).foregroundStyle(Color.gray)
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right").font(.system(size: 16)).foregroundStyle(.secondary)
@@ -147,7 +147,7 @@ struct LiveSessionView: View {
         VStack(spacing: 9) {
             HStack(spacing: 8) {
                 Circle().fill(model.isPaused ? .orange : MintTheme.mint).frame(width: 8, height: 8)
-                Text(model.isTransitioning ? "Finishing…" : model.isPaused ? "Paused" : "Listening").foregroundStyle(MintTheme.mint)
+                Text(model.isTransitioning ? "Updating…" : model.isPaused ? "Paused" : "Listening").foregroundStyle(MintTheme.mint)
                 Text(model.mode == "meta" ? "Muse Voice" : model.mode.capitalized).font(.system(size: 12)).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 Text(String(format: "%02d:%02d", model.elapsedSeconds / 60, model.elapsedSeconds % 60)).monospacedDigit()

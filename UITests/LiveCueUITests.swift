@@ -118,11 +118,16 @@ final class LiveCueUITests: XCTestCase {
         let input = app.descendants(matching: .any).matching(identifier: "assistant-instruction").firstMatch
         XCTAssertTrue(input.waitForExistence(timeout: 5))
         input.tap()
-        input.typeText("Answer briefly.")
+        // Allow the remote simulator to deliver each keystroke before sending the next.
+        for character in "Answer briefly." { input.typeText(String(character)) }
+        let entered = input.value as? String ?? ""
+        XCTAssertTrue(entered.contains("Answer briefly."), "Instruction typing must succeed before testing persistence: \(entered)")
+        app.buttons["finish-instruction"].tap()
+        app.tabBars.buttons["Live"].tap()
         app.terminate(); app.launch()
         app.tabBars.buttons["Settings"].tap()
         let restored = app.descendants(matching: .any).matching(identifier: "assistant-instruction").firstMatch
         XCTAssertTrue(restored.waitForExistence(timeout: 5))
-        XCTAssertTrue((restored.value as? String ?? "").contains("Answer briefly."))
+        XCTAssertEqual(restored.value as? String ?? "", entered)
     }
 }

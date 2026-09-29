@@ -154,9 +154,11 @@ final class AppModel: ObservableObject {
         elapsedSeconds = 0
         isRecording = true
         isPaused = false
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        let sessionTimer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
+        timer = sessionTimer
+        RunLoop.main.add(sessionTimer, forMode: .common)
         do {
             if isUITesting {
                 append([TranscriptSegment(text: "What is the main advantage of local transcription?", startSeconds: 0, endSeconds: 3)])

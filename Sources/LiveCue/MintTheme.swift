@@ -14,6 +14,7 @@ struct MintTypography: ViewModifier {
 
 struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
+    @FocusState private var editingInstruction: Bool
     var body: some View {
         Form {
             Section("Transcription & AI") {
@@ -30,6 +31,7 @@ struct SettingsView: View {
             Section("Assistant instructions") {
                 TextField("Optional instruction (e.g. answer briefly)", text: $model.instruction, axis: .vertical)
                     .lineLimit(2...5).accessibilityIdentifier("assistant-instruction")
+                    .focused($editingInstruction)
                 Text("Applied to every Assist request until you change it.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Transcription cost") {
@@ -49,6 +51,12 @@ struct SettingsView: View {
                 Text("The Meta API key stays encrypted on your Windows PC and is never sent to this iPhone. Your phone stores only its PC pairing token in Keychain. Live audio is not saved by the relay; transcripts and replies appear in desktop memory and are saved in your iPhone history. Obtain permission before recording others.").font(.system(size: 13)).foregroundStyle(.secondary)
             }
         }.scrollContentBackground(.hidden).background(MintTheme.background).navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { editingInstruction = false }.accessibilityIdentifier("finish-instruction")
+                }
+            }
     }
 }
 
