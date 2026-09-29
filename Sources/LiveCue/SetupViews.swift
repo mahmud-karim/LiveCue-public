@@ -107,6 +107,11 @@ struct ModelLibraryView: View {
 
 struct HistoryView: View {
     @EnvironmentObject private var model: AppModel
+    private func usageLabel(_ usage: TranscriptionUsage) -> String {
+        let name = SpeechProvider(rawValue: usage.provider)?.name ?? "Transcription"
+        let suffix = usage.incomplete ? " · incomplete" : ""
+        return "\(name) · \(usage.formattedCost) USD\(suffix)"
+    }
     var body: some View {
         List {
             if model.sessions.isEmpty { ContentUnavailableView("No conversations yet", systemImage: "waveform", description: Text("Completed sessions will appear here.")) }
@@ -117,7 +122,7 @@ struct HistoryView: View {
                         Text(session.startedAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
                         Text("\(session.segments.count) transcript segments · \(session.assistantTurns.count) assists").font(.caption).foregroundStyle(.secondary)
                         if let usage = session.transcriptionUsage {
-                            Text((SpeechProvider(rawValue: usage.provider)?.name ?? "Transcription") + " · " + usage.formattedCost + " USD" + (usage.incomplete ? " · incomplete" : ""))
+                            Text(usageLabel(usage))
                                 .font(.caption.monospacedDigit()).foregroundStyle(MintTheme.mint).accessibilityIdentifier("history-transcription-cost")
                         }
                     }
