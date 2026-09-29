@@ -6,7 +6,7 @@ on:
       release_tag:
         description: Release tag to create
         required: true
-        default: v0.1.0
+        default: v0.5.1
 
 permissions:
   contents: read
@@ -77,6 +77,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             | tee "$RUNNER_TEMP/LiveCue-device-build.log"
       - name: Package and validate IPA
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           APP_PATH="$RUNNER_TEMP/LiveCueDerivedData/Build/Products/Release-iphoneos/LiveCue.app"
@@ -85,6 +87,7 @@ jobs:
           test -d "$APP_PATH"
           test -f "$APP_PATH/LiveCue"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")" = "com.mahmudkarim.LiveCue"
+          test "$RELEASE_TAG" = "v$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Info.plist")"
           file "$APP_PATH/LiveCue" | grep -q arm64
           mkdir -p "$PACKAGE_ROOT/Payload"
           ditto "$APP_PATH" "$PACKAGE_ROOT/Payload/LiveCue.app"

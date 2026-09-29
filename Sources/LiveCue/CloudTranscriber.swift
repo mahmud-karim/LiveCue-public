@@ -24,6 +24,9 @@ final class CloudTranscriber {
     private var started = 0.0
     private var offset = 0.0
     private var audioObservers: [NSObjectProtocol] = []
+    private(set) var usage = TranscriptionUsage()
+    private var usageID: UUID?
+    func resetUsage() { stop(); usage = TranscriptionUsage() }
 
     func start(endpoint: String, token: String, offset: Double) async throws {
         stop(); generation = UUID(); let id = generation
@@ -45,6 +48,7 @@ final class CloudTranscriber {
             guard hello["type"] as? String == "ready" else { throw failure(hello["message"] as? String ?? "PC cloud transcription is not ready.") }
             timing = String(format: "Cloud connected · %.0f ms handshake", hello["handshakeMs"] as? Double ?? 0)
             started = ProcessInfo.processInfo.systemUptime
+            usageID = id; usage.begin(id)
             try capture(ws: ws, id: id)
             receiver = Task { [weak self] in
                 guard let self else { return }
@@ -55,6 +59,8 @@ final class CloudTranscriber {
                         if let message = event["message"] as? String, event["type"] as? String == "error" { throw self.failure(message) }
                         let type = event["type"] as? String ?? ""
                         let processed = event["audioProcessedMs"] as? Double ?? 0
+                        self.usage.update(id, processedMs: event["audioProcessedMs"] as? Double,
+                                          hasTranscript: !(event["transcript"] as? String ?? "").isEmpty)
                         if type == "transcript", !self.firstPartial, !(event["transcript"] as? String ?? "").isEmpty {
                             self.firstPartial = true
                             self.timing = String(format: "First words · %.2f s from stream start", ProcessInfo.processInfo.systemUptime - self.started)
@@ -69,6 +75,7 @@ final class CloudTranscriber {
                 } catch {
                     guard self.generation == id else { return }
                     self.finished = true
+                    self.usage.finish(id, completed: self.ending && ws.closeCode == .normalClosure)
                     if !self.ending || ws.closeCode != .normalClosure {
                         self.fail(error.localizedDescription)
                     }
@@ -113,9 +120,13 @@ final class CloudTranscriber {
                         }
                         self.energy = power; self.onUpdate?(self.partial, power, self.timing)
                         try await ws.send(.data(frame)); self.sentBytes += frame.count
+                        self.usage.update(id, sentMs: Double(self.sentBytes) / 48)
                     }
                 }
-                if !pending.isEmpty { try await ws.send(.data(pending)) }
+                if !pending.isEmpty {
+                    try await ws.send(.data(pending)); self.sentBytes += pending.count
+                    self.usage.update(id, sentMs: Double(self.sentBytes) / 48)
+                }
             } catch { if self.generation == id { self.fail("Audio connection failed. Resume to reconnect.") } }
         }
         engine = audio
@@ -145,6 +156,7 @@ final class CloudTranscriber {
         stop()
     }
     func stop() {
+        if let usageID { usage.finish(usageID, completed: false) }; usageID = nil
         audioObservers.forEach { NotificationCenter.default.removeObserver($0) }; audioObservers.removeAll()
         generation = UUID(); ending = true
         engine?.inputNode.removeTap(onBus: 0); engine?.stop(); engine = nil

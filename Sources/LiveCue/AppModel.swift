@@ -12,7 +12,9 @@ final class AppModel: ObservableObject {
     @Published var isRecording = false
     @Published var isPaused = false
     @Published var isAssisting = false
-    @Published var instruction = ""
+    @Published var instruction = UserDefaults.standard.string(forKey: "assistantInstruction") ?? "" {
+        didSet { UserDefaults.standard.set(instruction, forKey: "assistantInstruction") }
+    }
     @Published var latestAnswer: AssistantTurn?
     @Published var errorMessage: String?
     @Published var relayOnline = false
@@ -59,9 +61,12 @@ final class AppModel: ObservableObject {
     private let relay = RelayClient()
     private let repository: SessionRepository
     private var timer: Timer?
+    private var fixtureUsage = TranscriptionUsage()
+    private var fixtureStream = UUID()
+    private var fixtureStreamSeconds = 0
     private var isUITesting: Bool { ProcessInfo.processInfo.arguments.contains("-ui-testing") }
     var token: String? { KeychainStore.get(account: "relayToken") }
-    var isPaired: Bool { !endpoint.isEmpty && token != nil }
+    var isPaired: Bool { isUITesting || (!endpoint.isEmpty && token != nil) }
     var selectedModel: TranscriptionModel? { ComparisonTranscriber.catalog.first { $0.variant == selectedModelVariant && $0.variant == mode } }
 
     init() {
@@ -75,6 +80,7 @@ final class AppModel: ObservableObject {
             assistantConfiguration = AssistantConfiguration()
             selectedModelVariant = "voz"
             endpoint = "https://livecue.test"
+            relayOnline = true
         }
         Task { await checkRelay() }
     }
@@ -139,12 +145,18 @@ final class AppModel: ObservableObject {
         else { granted = await AVAudioApplication.requestRecordPermission() }
         guard granted else { errorMessage = "Microphone permission is required for live transcription."; return }
         activeSession = Session()
+        transcriber.resetCloudUsage()
+        activeSession?.transcriptionUsage = TranscriptionUsage(provider: mode)
+        fixtureUsage = TranscriptionUsage(provider: mode); fixtureStream = UUID(); fixtureStreamSeconds = 0
+        if isUITesting && mode == "meta" { fixtureUsage.begin(fixtureStream) }
         latestAnswer = nil
         lastAssistRequest = nil
         elapsedSeconds = 0
         isRecording = true
         isPaused = false
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in Task { @MainActor in self?.elapsedSeconds += 1 } }
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
         do {
             if isUITesting {
                 append([TranscriptSegment(text: "What is the main advantage of local transcription?", startSeconds: 0, endSeconds: 3)])
@@ -157,9 +169,14 @@ final class AppModel: ObservableObject {
         isTransitioning = true
         defer { isTransitioning = false }
         isPaused.toggle()
-        if isUITesting { return }
+        if isUITesting {
+            if isPaused { fixtureUsage.finish(fixtureStream, completed: true) }
+            else { fixtureStream = UUID(); fixtureStreamSeconds = 0; fixtureUsage.begin(fixtureStream) }
+            captureUsage(); return
+        }
         if isPaused { do { try await transcriber.pause() } catch { errorMessage = error.localizedDescription } }
         else { do { transcriber.cloudOffset = Double(elapsedSeconds); try await transcriber.start() } catch { isPaused = true; errorMessage = error.localizedDescription } }
+        captureUsage()
     }
 
     func assist(reuseText: Bool = false) async {
@@ -204,7 +221,6 @@ final class AppModel: ObservableObject {
             latest.memory = response.memory
             activeSession = latest
             latestAnswer = turn
-            instruction = ""
             try repository.save(latest)
         } catch { errorMessage = error.localizedDescription }
     }
@@ -213,24 +229,50 @@ final class AppModel: ObservableObject {
         guard activeSession != nil, !isAssisting, !isTransitioning else { return }
         isTransitioning = true
         defer { isTransitioning = false }
-        if !isUITesting { do { try await transcriber.pause() } catch { errorMessage = error.localizedDescription; return } }
+        if !isUITesting { do { try await transcriber.pause() } catch { errorMessage = error.localizedDescription } }
+        else { fixtureUsage.finish(fixtureStream, completed: true) }
+        captureUsage()
         guard var current = activeSession else { return }
         transcriber.stop(); timer?.invalidate(); isRecording = false; isPaused = false
         current.endedAt = .now
-        if let token = token, !isUITesting {
-            if let notes = try? await relay.summarize(session: current, endpoint: endpoint, token: token, assistant: assistantConfiguration) {
-                current.title = notes.title
-                current.notes = SessionNotes(summary: notes.summary, keyPoints: notes.keyPoints, actionItems: notes.actionItems)
-            }
-        } else {
-            current.title = current.segments.first?.text.prefix(48).description ?? "Conversation"
-        }
+        current.title = current.segments.first?.text.prefix(48).description ?? "Conversation"
         try? repository.save(current)
         sessions = repository.all()
         activeSession = nil
+        // Return navigation after audio drains, without waiting on a summary.
+        if let token = token, !isUITesting {
+            let saved = current, configuration = assistantConfiguration, address = endpoint
+            Task {
+                if let notes = try? await relay.summarize(session: saved, endpoint: address, token: token, assistant: configuration),
+                   repository.all().contains(where: { $0.id == saved.id }) {
+                    var updated = saved
+                    updated.title = notes.title
+                    updated.notes = SessionNotes(summary: notes.summary, keyPoints: notes.keyPoints, actionItems: notes.actionItems)
+                    try? repository.save(updated); sessions = repository.all()
+                }
+            }
+        }
     }
 
     func deleteSession(_ id: UUID) { try? repository.delete(id: id); sessions = repository.all() }
+
+    private func tick() {
+        guard activeSession != nil else { return }
+        elapsedSeconds += 1
+        if isUITesting, mode == "meta", !isPaused, !isTransitioning {
+            fixtureStreamSeconds += 1
+            fixtureUsage.update(fixtureStream, sentMs: Double(fixtureStreamSeconds * 1000), processedMs: Double(fixtureStreamSeconds * 1000), hasTranscript: true)
+            transcriber.energy = Float(0.025 + 0.02 * sin(Double(elapsedSeconds)))
+        }
+        captureUsage()
+    }
+
+    private func captureUsage() {
+        guard var current = activeSession else { return }
+        if mode == "meta" { current.transcriptionUsage = isUITesting ? fixtureUsage : transcriber.cloudUsage }
+        activeSession = current
+        try? repository.save(current)
+    }
 
     private func append(_ segments: [TranscriptSegment]) {
         guard var current = activeSession else { return }

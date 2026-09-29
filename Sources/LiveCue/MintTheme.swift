@@ -27,9 +27,20 @@ struct SettingsView: View {
                 NavigationLink { AssistantLabView() } label: { Label("Assistant models & timing", systemImage: "slider.horizontal.3") }.accessibilityIdentifier("assistant-lab")
                 Text(model.mode == "meta" ? "Audio streams through your PC to Meta. No model download. Cloud usage is billed by Meta. Recording stops if the connection fails; resume to reconnect." : "Audio is transcribed on this iPhone. Only text is sent to your PC.").font(.system(size: 13)).foregroundStyle(.secondary)
             }
+            Section("Assistant instructions") {
+                TextField("Optional instruction (e.g. answer briefly)", text: $model.instruction, axis: .vertical)
+                    .lineLimit(2...5).accessibilityIdentifier("assistant-instruction")
+                Text("Applied to every Assist request until you change it.").font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Transcription cost") {
+                LabeledContent("Meta Muse rate", value: "$0.18 / hour")
+                Text("Live estimates use audio sent; completed streams use Meta's reported processed audio, rounded down to whole seconds per stream. Silence sent to Meta counts as audio. Credits and billing adjustments are not included. Interrupted streams may have incomplete usage. This estimates transcription only, not assistant usage.").font(.caption).foregroundStyle(.secondary)
+                Link("Meta pricing & usage documentation", destination: URL(string: "https://dev.meta.ai/docs/speech-to-text#pricing")!)
+            }
             Section("Display") {
                 LabeledContent("Text size", value: "16 pt · follows Dynamic Type")
                 LabeledContent("Appearance", value: "Midnight Mint")
+                LabeledContent("Version", value: (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.5.1")
             }
             Section("Devices") {
                 NavigationLink { PairingView() } label: { Label("Pair Windows PC", systemImage: "desktopcomputer") }.accessibilityIdentifier("pair-pc")

@@ -116,6 +116,10 @@ struct HistoryView: View {
                         Text(session.title).font(.headline).lineLimit(2)
                         Text(session.startedAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
                         Text("\(session.segments.count) transcript segments · \(session.assistantTurns.count) assists").font(.caption).foregroundStyle(.secondary)
+                        if let usage = session.transcriptionUsage {
+                            Text("Est. transcription · " + usage.formattedCost + " USD" + (usage.incomplete ? " · incomplete" : ""))
+                                .font(.caption.monospacedDigit()).foregroundStyle(MintTheme.mint).accessibilityIdentifier("history-transcription-cost")
+                        }
                     }
                 }
             }.onDelete { offsets in offsets.map { model.sessions[$0].id }.forEach(model.deleteSession) }
@@ -127,6 +131,18 @@ struct SessionDetailView: View {
     let session: Session
     var body: some View {
         List {
+            if let usage = session.transcriptionUsage {
+                Section("Transcription usage") {
+                    LabeledContent("Estimated cost", value: usage.formattedCost + " USD")
+                    LabeledContent("Provider", value: usage.provider == "meta" ? "Meta Muse" : "On-device")
+                    if usage.provider == "meta" {
+                        LabeledContent("Processed audio reported", value: String(format: "%.0f seconds", usage.reportedSeconds))
+                        LabeledContent("Streams", value: "\(usage.streams.count)")
+                        LabeledContent("Rate saved with session", value: String(format: "$%.2f / hour", usage.hourlyRateUSD))
+                        Text(usage.incomplete ? "Connection ended before all usage could be confirmed. This is an incomplete estimate, not a Meta invoice." : "Calculated from reported audio usage; not a confirmed charge. Credits and billing adjustments may change your bill.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
             if !session.notes.summary.isEmpty { Section("Summary") { Text(session.notes.summary) } }
             if !session.notes.keyPoints.isEmpty { Section("Key points") { ForEach(session.notes.keyPoints, id: \.self) { Label($0, systemImage: "circle.fill") } } }
             if !session.notes.actionItems.isEmpty { Section("Action items") { ForEach(session.notes.actionItems, id: \.self) { Label($0, systemImage: "checkmark.circle") } } }

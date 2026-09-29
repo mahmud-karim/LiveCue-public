@@ -33,8 +33,8 @@ targets:
       path: Info.plist
       properties:
         CFBundleDisplayName: LiveCue
-        CFBundleShortVersionString: "0.5.0"
-        CFBundleVersion: "5"
+        CFBundleShortVersionString: "0.5.1"
+        CFBundleVersion: "6"
         UILaunchScreen: {}
         NSMicrophoneUsageDescription: LiveCue transcribes microphone audio locally or streams it through your PC to Meta, depending on your selected provider.
         NSCameraUsageDescription: LiveCue scans the pairing QR code displayed on your Windows PC.
@@ -53,8 +53,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mahmudkarim.LiveCue
         PRODUCT_NAME: LiveCue
-        MARKETING_VERSION: "0.5.0"
-        CURRENT_PROJECT_VERSION: "5"
+        MARKETING_VERSION: "0.5.1"
+        CURRENT_PROJECT_VERSION: "6"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Manual

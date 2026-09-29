@@ -1,5 +1,13 @@
 # LiveCue
 
+## 0.5.1 — focused conversation UI
+
+Mint-glow home screen with a bottom Start button; full-screen conversation with microphone-driven waveform and no navigation tabs until Stop. Optional assistant instructions now persist in Settings. Answers open in a dismissible sheet so the transcript remains readable.
+
+The conversation counter updates once per second and History saves a **transcription estimate**, not a Meta invoice. Live estimates use successfully sent PCM duration; finished streams use the last reported `audioProcessedMs`, rounded down separately per stream. The session stores its rate ($0.18/hour, checked 2026-09-28), pauses/reconnects and incomplete-usage status. Credits, taxes, adjustments and assistant usage are excluded. Local STT has no cloud transcription charge. Old history without usage remains readable and does not fabricate a zero cost.
+
+Keep development versions below 1.0 and use patch increments for iterations (0.5.1, 0.5.2, ...). Only move to 1.0 with the owner's explicit approval. Build numbers may increase independently. The release workflow checks that its tag matches the IPA version.
+
 LiveCue is a personal iPhone conversation assistant with public source and a private Windows relay. Midnight Mint uses 16-point default body text (scaling with iOS Dynamic Type). **Meta Muse** streams live captions through your PC; **Voz on Assist** and **Live Parakeet** remain available under Settings as on-device alternatives. Assist sends the current text context to Codex CLI on your Windows PC.
 
 Requires iOS 18 or later. End the current conversation before changing transcription provider. Local models require preparation; Meta needs no model download. Cloud shows first partial timing from stream start, which includes time spent speaking, not isolated inference latency. Simulator UI tests use fixtures; microphone hardware and actual latency require iPhone testing.

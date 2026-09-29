@@ -3,16 +3,21 @@ import LiveCueCore
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
-
     var body: some View {
-        TabView {
-            modePage.tabItem { Label("Live", systemImage: "waveform") }
-            NavigationStack { HistoryView() }.tabItem { Label("History", systemImage: "clock") }
-            NavigationStack { SettingsView() }.tabItem { Label("Settings", systemImage: "slider.horizontal.3") }
+        Group {
+            if model.activeSession != nil {
+                NavigationStack { LiveSessionView() }
+            } else {
+                TabView {
+                    NavigationStack { HomeView() }.tabItem { Label("Live", systemImage: "waveform") }
+                    NavigationStack { HistoryView() }.tabItem { Label("History", systemImage: "clock") }
+                    NavigationStack { SettingsView() }.tabItem { Label("Settings", systemImage: "gearshape") }
+                }
+                .toolbarBackground(MintTheme.background, for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+            }
         }
         .tint(MintTheme.mint)
-        .toolbarBackground(MintTheme.background, for: .tabBar)
-        .toolbarBackground(.visible, for: .tabBar)
         .task {
             while !Task.isCancelled {
                 await model.checkRelay()
@@ -23,144 +28,189 @@ struct RootView: View {
             Button("OK") { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
     }
-
-    private var modePage: some View {
-        NavigationStack {
-            Group {
-                if model.activeSession != nil { LiveSessionView() }
-                else { HomeView() }
-            }
-            .background(MintTheme.background)
-            .navigationTitle("LiveCue")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .principal) { Text("LiveCue").font(.system(size: 22, weight: .semibold)) } }
-            .toolbarBackground(MintTheme.background, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-        }
-    }
-}
-
-private struct StatusPill: View {
-    let online: Bool
-    var body: some View {
-        Label(online ? "PC online" : "PC offline", systemImage: online ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-            .font(.caption.weight(.semibold)).foregroundStyle(online ? .green : .orange)
-            .padding(.horizontal, 10).padding(.vertical, 6).background(.thinMaterial, in: Capsule())
-    }
 }
 
 struct HomeView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
-        ScrollView {
-            VStack(spacing: 18) {
-                VStack(spacing: 10) {
-                    Image(systemName: "waveform").font(.system(size: 36)).foregroundStyle(MintTheme.mint).padding(16).background(MintTheme.teal, in: RoundedRectangle(cornerRadius: 20))
-                    Text(model.mode == "voz" ? "Record. Assist. Answer." : "A clearer conversation.").font(.system(size: 22, weight: .semibold))
-                    Text(model.mode == "meta" ? "Live captions with Meta Muse. Tap Assist when you want a reply from your PC." : (model.mode == "voz" ? "Voz transcribes locally when you tap Assist. Only text goes to your PC." : "Parakeet transcribes live on your iPhone. Only text goes to your PC."))
-                        .multilineTextAlignment(.center).foregroundStyle(.secondary)
-                    StatusPill(online: model.relayOnline)
-                }.padding(.vertical, 18)
-
-                if model.mode != "meta" && model.selectedModel == nil {
-                    NavigationLink { ModelLibraryView() } label: {
-                        Label("Download a transcription model", systemImage: "arrow.down.circle.fill").frame(maxWidth: .infinity)
-                    }.buttonStyle(.borderedProminent).controlSize(.large).accessibilityIdentifier("download-model")
-                } else {
-                    Button { Task { await model.startSession() } } label: {
-                        Label("Start conversation", systemImage: "record.circle").frame(maxWidth: .infinity)
-                    }.buttonStyle(.borderedProminent).foregroundStyle(MintTheme.background).controlSize(.large).disabled(model.isTransitioning).accessibilityIdentifier("start-session")
-                }
-
-                GroupBox {
-                    LabeledContent("Transcription", value: model.mode == "meta" ? "Meta Muse · cloud" : model.selectedModel?.displayName ?? "Not configured")
-                    Divider()
-                    LabeledContent("Windows relay", value: model.isPaired ? "Paired" : "Pairing required")
-                } label: { Label("Readiness", systemImage: "checklist") }
-
-                NavigationLink { PairingView() } label: { SettingsRow(icon: "desktopcomputer", title: "Pair Windows PC", detail: model.isPaired ? "Configured" : "Required") }.accessibilityIdentifier("pair-pc")
-                NavigationLink { SettingsView() } label: { SettingsRow(icon: "waveform", title: "Transcription & appearance", detail: "Cloud or on-device speech") }
-                NavigationLink { AssistantLabView() } label: { SettingsRow(icon: "slider.horizontal.3", title: "Assistant models & timing", detail: model.assistantConfiguration.model) }.accessibilityIdentifier("assistant-lab")
-                if model.mode == "meta" { Text("Audio is processed by Meta via your PC. Cloud usage is billed to your Meta account.").font(.system(size: 13)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
-            }.padding()
+        GeometryReader { geometry in
+            if typeSize.isAccessibilitySize {
+                ScrollView { content(compact: true) }
+            } else {
+                content(compact: geometry.size.height < 740)
+            }
         }
-        .refreshable { await model.checkRelay() }
+        .background(MintTheme.background.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+    }
+    private func content(compact: Bool) -> some View {
+        VStack(spacing: compact ? 10 : 14) {
+            VStack(spacing: compact ? 5 : 8) {
+                VoiceArtwork(level: 0, listening: false).frame(height: compact ? 88 : 120)
+                Text("LiveCue").font(.system(size: compact ? 30 : 36, weight: .bold))
+                Text("A clearer conversation.").font(.system(size: compact ? 17 : 20)).foregroundStyle(.secondary)
+                Text(model.mode == "meta" ? "Live captions with Meta Muse.\nTap Assist for an answer from your PC." : "Transcription on your iPhone.\nTap Assist for an answer from your PC.")
+                    .font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                Label(model.relayOnline ? "PC online" : "PC offline", systemImage: "circle.fill")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(model.relayOnline ? MintTheme.mint : .orange)
+                    .padding(.horizontal, 16).padding(.vertical, 7).background(MintTheme.teal.opacity(0.55), in: Capsule())
+            }
+            VStack(spacing: 10) {
+                HStack {
+                    Label("System readiness", systemImage: "checklist").font(.system(size: 16, weight: .semibold))
+                    Spacer()
+                    Text(model.relayOnline && (model.mode == "meta" || model.selectedModel != nil) ? "✓ Ready" : "Setup")
+                        .font(.system(size: 12, weight: .medium)).foregroundStyle(MintTheme.mint)
+                }
+                HStack {
+                    Label("Transcription", systemImage: "waveform"); Spacer()
+                    Text(model.mode == "meta" ? "Meta Muse · cloud" : model.selectedModel?.displayName ?? "Not configured").foregroundStyle(.secondary)
+                }.font(.system(size: 13))
+                Divider().overlay(MintTheme.mint.opacity(0.08))
+                HStack { Label("Windows relay", systemImage: "desktopcomputer"); Spacer(); Text(model.isPaired ? "Paired" : "Pairing required").foregroundStyle(.secondary) }.font(.system(size: 13))
+            }.padding(compact ? 12 : 15).glowPanel()
+            VStack(spacing: compact ? 8 : 10) {
+                NavigationLink { PairingView() } label: { SetupRow(icon: "desktopcomputer", title: "Pair Windows PC", detail: model.isPaired ? "Configured" : "Required", compact: compact) }.accessibilityIdentifier("pair-pc")
+                NavigationLink { SettingsView() } label: { SetupRow(icon: "waveform", title: "Transcription & appearance", detail: "Cloud or on-device speech", compact: compact) }
+                NavigationLink { AssistantLabView() } label: { SetupRow(icon: "slider.horizontal.3", title: "Assistant models & timing", detail: model.assistantConfiguration.model, compact: compact) }.accessibilityIdentifier("assistant-lab")
+            }
+            Spacer(minLength: 0)
+            if model.mode != "meta" && model.selectedModel == nil {
+                NavigationLink { ModelLibraryView() } label: { Label("Download a transcription model", systemImage: "arrow.down.circle.fill").frame(maxWidth: .infinity) }
+                    .buttonStyle(MintActionStyle()).accessibilityIdentifier("download-model")
+            } else {
+                Button { Task { await model.startSession() } } label: {
+                    HStack { Image(systemName: "record.circle"); Text(model.isTransitioning ? "Connecting…" : "Start conversation"); Spacer(); Image(systemName: "arrow.right") }
+                }.buttonStyle(MintActionStyle()).disabled(model.isTransitioning).accessibilityIdentifier("start-session")
+            }
+        }.padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 12)
     }
 }
 
-private struct SettingsRow: View {
+private struct SetupRow: View {
     let icon: String, title: String, detail: String
+    let compact: Bool
     var body: some View {
-        HStack { Image(systemName: icon).frame(width: 30).foregroundStyle(MintTheme.mint); VStack(alignment: .leading, spacing: 5) { Text(title); Text(detail).font(.system(size: 13)).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").foregroundStyle(.tertiary) }
-        .padding(14).background(MintTheme.card, in: RoundedRectangle(cornerRadius: 14)).foregroundStyle(.primary)
+        HStack(spacing: 12) {
+            Image(systemName: icon).font(.system(size: 22)).foregroundStyle(MintTheme.mint)
+                .frame(width: compact ? 38 : 44, height: compact ? 38 : 44)
+                .background(MintTheme.teal.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 15, weight: .medium))
+                Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right").font(.system(size: 16)).foregroundStyle(.secondary)
+        }.foregroundStyle(.primary).padding(compact ? 10 : 12).glowPanel()
     }
 }
 
 struct LiveSessionView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showDetails = false
+    @State private var showAnswer = false
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 14) {
-                    NavigationLink { AssistantLabView() } label: {
-                        HStack { Label(model.assistantConfiguration.model, systemImage: "slider.horizontal.3"); Spacer(); Text(model.assistantConfiguration.reasoningEffort).font(.caption) }
-                    }.accessibilityIdentifier("assistant-lab").disabled(model.isAssisting)
+        GeometryReader { geometry in
+            let compact = geometry.size.height < 750
+            VStack(spacing: 12) {
+                VStack(spacing: 3) {
+                    Text("LiveCue").font(.system(size: compact ? 28 : 32, weight: .bold))
+                    Text("A clearer conversation.").font(.system(size: 15)).foregroundStyle(.secondary)
+                }
+                VoiceArtwork(level: model.transcriber.energy, listening: model.isRecording && !model.isPaused && !model.isTransitioning)
+                    .frame(height: compact ? 88 : 132).accessibilityIdentifier("voice-waveform")
+                NavigationLink { AssistantLabView() } label: {
                     HStack {
-                        Circle().fill(model.isPaused ? .orange : MintTheme.mint).frame(width: 8)
-                        Text(model.isPaused ? "Paused" : "Listening").foregroundStyle(MintTheme.mint)
-                        Text(model.mode == "meta" ? "Muse Voice" : model.mode.capitalized).font(.system(size: 13)).foregroundStyle(.secondary)
+                        Label(model.assistantConfiguration.model, systemImage: "slider.horizontal.3").font(.system(size: 15))
                         Spacer()
-                        Text(duration(model.elapsedSeconds)).monospacedDigit()
-                        AudioMeter(level: model.transcriber.energy)
-                    }.padding(14).background(MintTheme.card, in: RoundedRectangle(cornerRadius: 14))
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(model.mode == "voz" ? "TRANSCRIPT" : "LIVE TRANSCRIPT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        if !model.transcriber.timing.isEmpty { Text(model.transcriber.timing).font(.caption).foregroundStyle(.secondary) }
+                        Text(model.assistantConfiguration.reasoningEffort).font(.system(size: 13))
+                            .padding(.horizontal, 13).padding(.vertical, 6).background(MintTheme.teal.opacity(0.5), in: Capsule())
+                    }.frame(minHeight: 36)
+                }.accessibilityIdentifier("assistant-lab").disabled(model.isAssisting)
+                status
+                transcript.frame(maxHeight: .infinity)
+                if model.latestAnswer != nil {
+                    Button { showAnswer = true } label: {
+                        HStack { Label("View assistant answer", systemImage: "sparkles"); Spacer(); Image(systemName: "chevron.up") }.font(.system(size: 14))
+                    }.padding(12).glowPanel().accessibilityIdentifier("view-assistant-answer")
+                }
+                controls
+            }.padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 16)
+        }
+        .background(MintTheme.background.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $showAnswer) { answerSheet.presentationDetents([.medium, .large]).presentationDragIndicator(.visible) }
+        .onChange(of: model.latestAnswer?.id) { _, value in if value != nil { showAnswer = true } }
+    }
+    private var status: some View {
+        VStack(spacing: 9) {
+            HStack(spacing: 8) {
+                Circle().fill(model.isPaused ? .orange : MintTheme.mint).frame(width: 8, height: 8)
+                Text(model.isTransitioning ? "Finishing…" : model.isPaused ? "Paused" : "Listening").foregroundStyle(MintTheme.mint)
+                Text(model.mode == "meta" ? "Muse Voice" : model.mode.capitalized).font(.system(size: 12)).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Text(String(format: "%02d:%02d", model.elapsedSeconds / 60, model.elapsedSeconds % 60)).monospacedDigit()
+            }.font(.system(size: 16))
+            HStack {
+                Text(model.mode == "meta" ? "Est. transcription" : "On-device transcription")
+                Spacer()
+                Text((model.activeSession?.transcriptionUsage?.formattedCost ?? "$0.00000") + " USD")
+                    .monospacedDigit().accessibilityIdentifier("live-transcription-cost")
+            }.font(.system(size: 12)).foregroundStyle(.secondary)
+        }.padding(14).glowPanel(highlight: true)
+    }
+    private var transcript: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(model.mode == "voz" ? "TRANSCRIPT" : "LIVE TRANSCRIPT").font(.system(size: 12, weight: .semibold)).tracking(2).foregroundStyle(.secondary)
+            if !model.transcriber.timing.isEmpty { Text(model.transcriber.timing).font(.system(size: 12)).foregroundStyle(.secondary) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
                         if model.activeSession?.segments.isEmpty != false { Text(model.mode == "voz" ? "Recording locally. Tap Assist to transcribe." : "Listening for speech…").foregroundStyle(.secondary) }
                         ForEach(model.activeSession?.segments ?? []) { segment in Text(segment.text).frame(maxWidth: .infinity, alignment: .leading) }
-                        if !model.transcriber.partialText.isEmpty { Text(model.transcriber.partialText).foregroundStyle(.secondary).italic() }
-                        Color.clear.frame(height: 1).id("bottom")
-                    }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(MintTheme.card, in: RoundedRectangle(cornerRadius: 16))
-
-                    if let answer = model.latestAnswer {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Label("ASSISTANT", systemImage: "sparkles").font(.system(size: 12, weight: .semibold)).foregroundStyle(MintTheme.mint)
-                            Text(answer.answer).accessibilityIdentifier("assistant-answer")
-                            if showDetails { Divider(); Text(answer.details).foregroundStyle(.secondary) }
-                            Button(showDetails ? "Hide detail" : "Expand detail") { showDetails.toggle() }
-                            if let metrics = answer.performance {
-                                DisclosureGroup("Timing · " + String(format: "%.2f s total", metrics.totalMs / 1000)) {
-                                    PerformanceView(metrics: metrics).padding(.top, 8)
-                                }.accessibilityIdentifier("timing-disclosure")
-                            }
-                            Button("Retry same text with selected model") { Task { await model.assist(reuseText: true) } }
-                                .disabled(model.isAssisting || model.lastAssistRequest == nil).accessibilityIdentifier("retry-same-text")
-                        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(MintTheme.teal.opacity(0.65), in: RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(MintTheme.mint.opacity(0.4)))
-                    }
-                }.padding()
+                        if !model.transcriber.partialText.isEmpty { Text(model.transcriber.partialText).foregroundStyle(.secondary) }
+                        Color.clear.frame(height: 1).id("transcript-bottom")
+                    }.font(.system(size: 16)).frame(maxWidth: .infinity, alignment: .leading)
+                }.accessibilityIdentifier("live-transcript")
+                .onChange(of: model.activeSession?.segments.count) { _, _ in withAnimation { proxy.scrollTo("transcript-bottom", anchor: .bottom) } }
+                .onChange(of: model.transcriber.partialText) { _, _ in proxy.scrollTo("transcript-bottom", anchor: .bottom) }
             }
-            .onChange(of: model.activeSession?.segments.count) { _, _ in withAnimation { proxy.scrollTo("bottom") } }
-        }
-        .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 10) {
-                TextField("Optional instruction (e.g. answer briefly)", text: $model.instruction).textFieldStyle(.roundedBorder)
-                HStack {
-                    Button { Task { await model.togglePause() } } label: { Image(systemName: model.isPaused ? "play.fill" : "pause.fill").frame(width: 42, height: 42) }.buttonStyle(.bordered).disabled(model.isAssisting || model.isTransitioning)
-                    Button { Task { await model.assist() } } label: {
-                        if model.isAssisting { HStack { ProgressView(); Text(model.assistStage) }.frame(maxWidth: .infinity) }
-                        else { Label("Assist", systemImage: "sparkles").frame(maxWidth: .infinity) }
-                    }.buttonStyle(.borderedProminent).foregroundStyle(MintTheme.background).controlSize(.large).disabled(model.isAssisting || model.isTransitioning).accessibilityIdentifier("assist-button")
-                    Button(role: .destructive) { Task { await model.endSession() } } label: { Image(systemName: "stop.fill").frame(width: 42, height: 42) }.buttonStyle(.bordered).disabled(model.isAssisting || model.isTransitioning).accessibilityIdentifier("end-session")
+        }.padding(18).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .glowPanel(highlight: true)
+    }
+    private var controls: some View {
+        HStack(spacing: 16) {
+            Button { Task { await model.togglePause() } } label: {
+                Image(systemName: model.isPaused ? "play.fill" : "pause.fill").frame(width: 54, height: 54)
+            }.buttonStyle(MintRoundStyle()).accessibilityLabel(model.isPaused ? "Resume" : "Pause").accessibilityIdentifier("pause-session")
+                .disabled(model.isAssisting || model.isTransitioning)
+            Button { Task { await model.assist() } } label: {
+                HStack { if model.isAssisting { ProgressView() }; Label(model.isAssisting ? model.assistStage : "Assist", systemImage: "sparkles") }.frame(maxWidth: .infinity)
+            }.buttonStyle(MintActionStyle()).disabled(model.isAssisting || model.isTransitioning).accessibilityIdentifier("assist-button")
+            Button { Task { await model.endSession() } } label: {
+                if model.isTransitioning { ProgressView().frame(width: 54, height: 54) }
+                else { Image(systemName: "stop.fill").frame(width: 54, height: 54) }
+            }.buttonStyle(MintRoundStyle()).disabled(model.isAssisting || model.isTransitioning).accessibilityLabel("Stop conversation").accessibilityIdentifier("end-session")
+        }.padding(.top, 3)
+    }
+    private var answerSheet: some View {
+        NavigationStack {
+            ScrollView {
+                if let answer = model.latestAnswer {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(answer.answer).accessibilityIdentifier("assistant-answer")
+                        Button(showDetails ? "Hide detail" : "Expand detail") { showDetails.toggle() }
+                        if showDetails { Text(answer.details).foregroundStyle(.secondary) }
+                        if let metrics = answer.performance {
+                            DisclosureGroup("Timing · " + String(format: "%.2f s total", metrics.totalMs / 1000)) { PerformanceView(metrics: metrics).padding(.top, 8) }.accessibilityIdentifier("timing-disclosure")
+                        }
+                        Button("Retry same text with selected model") { Task { await model.assist(reuseText: true) } }
+                            .disabled(model.isAssisting || model.lastAssistRequest == nil).accessibilityIdentifier("retry-same-text")
+                    }.padding(20)
                 }
-            }.padding().background(.ultraThinMaterial)
+            }.background(MintTheme.background).navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showAnswer = false }.accessibilityIdentifier("dismiss-answer") } }
         }
     }
-    private func duration(_ seconds: Int) -> String { String(format: "%02d:%02d", seconds / 60, seconds % 60) }
-}
-
-private struct AudioMeter: View {
-    let level: Float
-    var body: some View { HStack(spacing: 2) { ForEach(0..<4) { index in Capsule().fill(Float(index) / 4 < min(1, abs(level) * 10) ? .green : .gray.opacity(0.3)).frame(width: 3, height: CGFloat(8 + index * 4)) } } }
 }

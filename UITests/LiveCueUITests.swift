@@ -40,6 +40,7 @@ final class LiveCueUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 10))
         let voz = XCTAttachment(screenshot: app.screenshot())
         voz.name = "Voz on Assist"; voz.lifetime = .keepAlways; add(voz)
+        app.buttons["dismiss-answer"].tap()
         app.buttons["end-session"].tap()
         XCTAssertTrue(app.buttons["start-session"].waitForExistence(timeout: 5))
         app.tabBars.buttons["History"].tap()
@@ -74,8 +75,54 @@ final class LiveCueUITests: XCTestCase {
     func testMintSettingsAndCloudDisclosure() {
         let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
         app.tabBars.buttons["Settings"].tap()
-        XCTAssertTrue(app.staticTexts["Midnight Mint"].exists || app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Midnight Mint")).firstMatch.exists)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Audio streams through your PC to Meta")).firstMatch.exists)
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["Midnight Mint"].exists || app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Midnight Mint")).firstMatch.exists)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Midnight Mint Settings"; shot.lifetime = .keepAlways; add(shot)
+    }
+
+    func testFocusedConversationCostPauseAndHistory() {
+        let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
+        XCTAssertTrue(app.buttons["start-session"].waitForExistence(timeout: 5))
+        for id in ["pair-pc", "assistant-lab", "start-session"] { XCTAssertTrue(app.buttons[id].isHittable) }
+        XCTAssertFalse(app.staticTexts["live-transcription-cost"].exists)
+        let start = app.buttons["start-session"].frame
+        XCTAssertLessThan(start.maxY, app.tabBars.firstMatch.frame.minY + 1)
+        let home = XCTAttachment(screenshot: app.screenshot()); home.name = "0.5.1 Home - no scroll"; home.lifetime = .keepAlways; add(home)
+        app.buttons["start-session"].tap()
+        XCTAssertTrue(app.staticTexts["live-transcription-cost"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.tabBars.count, 0)
+        XCTAssertFalse(app.textFields["assistant-instruction"].exists)
+        let cost = app.staticTexts["live-transcription-cost"]
+        let positive = expectation(for: NSPredicate(format: "label != %@", "$0.00000 USD"), evaluatedWith: cost)
+        wait(for: [positive], timeout: 5)
+        let live = XCTAttachment(screenshot: app.screenshot()); live.name = "0.5.1 Live waveform and cost"; live.lifetime = .keepAlways; add(live)
+        app.buttons["pause-session"].tap()
+        XCTAssertTrue(app.staticTexts["Paused"].waitForExistence(timeout: 5))
+        let pausedCost = cost.label
+        let unchanged = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in cost.label != pausedCost }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [unchanged], timeout: 2), .timedOut)
+        XCTAssertEqual(app.tabBars.count, 0)
+        app.buttons["end-session"].tap()
+        XCTAssertTrue(app.buttons["start-session"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["History"].tap()
+        let saved = app.staticTexts["history-transcription-cost"].firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 5))
+        XCTAssertTrue(saved.label.contains(pausedCost))
+        let history = XCTAttachment(screenshot: app.screenshot()); history.name = "0.5.1 History costs"; history.lifetime = .keepAlways; add(history)
+    }
+
+    func testInstructionsLiveOnlyInSettingsAndPersist() {
+        let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
+        app.tabBars.buttons["Settings"].tap()
+        let input = app.descendants(matching: .any).matching(identifier: "assistant-instruction").firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.tap()
+        input.typeText("Answer briefly.")
+        app.terminate(); app.launch()
+        app.tabBars.buttons["Settings"].tap()
+        let restored = app.descendants(matching: .any).matching(identifier: "assistant-instruction").firstMatch
+        XCTAssertTrue(restored.waitForExistence(timeout: 5))
+        XCTAssertTrue((restored.value as? String ?? "").contains("Answer briefly."))
     }
 }

@@ -30,6 +30,8 @@ final class ComparisonTranscriber: ObservableObject {
     var cloudEndpoint = ""
     var cloudToken = ""
     var cloudOffset = 0.0
+    var cloudUsage: TranscriptionUsage { cloud.usage }
+    func resetCloudUsage() { cloud.resetUsage() }
     func useCloud() {
         variant = "meta"
         cloud.onUpdate = { [weak self] partial, energy, timing in self?.partialText = partial; self?.energy = energy; self?.timing = timing }

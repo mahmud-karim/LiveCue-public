@@ -70,6 +70,7 @@ public struct Session: Codable, Identifiable, Equatable, Sendable {
     public var assistantTurns: [AssistantTurn]
     public var memory: SessionMemory
     public var notes: SessionNotes
+    public var transcriptionUsage: TranscriptionUsage?
 
     public init(id: UUID = UUID(), title: String = "New conversation", startedAt: Date = .now, endedAt: Date? = nil, segments: [TranscriptSegment] = [], assistantTurns: [AssistantTurn] = [], memory: SessionMemory = .init(), notes: SessionNotes = .init()) {
         self.id = id
