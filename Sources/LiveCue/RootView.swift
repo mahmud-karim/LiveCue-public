@@ -45,6 +45,12 @@ struct HomeView: View {
         }
         .background(MintTheme.background.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .task(id: model.mode) {
+            while model.speechProvider.isPCLocal && !Task.isCancelled {
+                await model.refreshPCModel()
+                do { try await Task.sleep(for: .seconds(2)) } catch { break }
+            }
+        }
     }
     private func content(compact: Bool) -> some View {
         VStack(spacing: compact ? 10 : 14) {
@@ -62,7 +68,7 @@ struct HomeView: View {
                 HStack {
                     Label("System readiness", systemImage: "checklist").font(.system(size: 16, weight: .semibold))
                     Spacer()
-                    Text(model.relayOnline && (model.speechProvider.isPCLocal ? model.pcModelReady : model.speechProvider.usesPC || model.selectedModel != nil) ? "✓ Ready" : "Setup")
+                    Text(model.relayOnline && (model.speechProvider.isPCLocal ? model.pcModelCanStart : model.speechProvider.usesPC || model.selectedModel != nil) ? "✓ Ready" : "Setup")
                         .font(.system(size: 12, weight: .medium)).foregroundStyle(MintTheme.mint)
                 }
                 HStack {
@@ -71,10 +77,21 @@ struct HomeView: View {
                 }.font(.system(size: 13))
                 Divider().overlay(MintTheme.mint.opacity(0.08))
                 HStack { Label("Windows relay", systemImage: "desktopcomputer"); Spacer(); Text(model.isPaired ? "Paired" : "Pairing required").foregroundStyle(.secondary) }.font(.system(size: 13))
+                if model.speechProvider.isPCLocal {
+                    Divider().overlay(MintTheme.mint.opacity(0.08))
+                    HStack(spacing: 7) {
+                        Label("PC speech model", systemImage: "cpu")
+                        Spacer(minLength: 0)
+                        if model.pcModelStatus?.isChanging == true { ProgressView().controlSize(.mini) }
+                        Text(model.pcModelHomeLabel)
+                            .foregroundStyle(model.pcModelCanStart ? MintTheme.mint : .orange)
+                            .monospacedDigit().accessibilityIdentifier("home-pc-model-state")
+                    }.font(.system(size: 12))
+                }
             }.padding(compact ? 12 : 15).glowPanel()
             VStack(spacing: compact ? 8 : 10) {
                 NavigationLink { PairingView() } label: { SetupRow(icon: "desktopcomputer", title: model.isPaired ? "PC connection" : "Pair Windows PC", detail: model.isPaired ? (model.relayOnline ? "Saved · connected" : "Saved · reconnecting") : "Required", compact: compact) }.accessibilityIdentifier("pair-pc")
-                NavigationLink { SettingsView() } label: { SetupRow(icon: "waveform", title: "Transcription & appearance", detail: "Cloud, PC or iPhone speech", compact: compact) }
+                NavigationLink { SettingsView() } label: { SetupRow(icon: "waveform", title: "Transcription & appearance", detail: model.speechProvider.isPCLocal ? model.pcModelHomeLabel : "Cloud, PC or iPhone speech", compact: compact) }.accessibilityIdentifier("transcription-settings")
                 NavigationLink { AssistantLabView() } label: { SetupRow(icon: "slider.horizontal.3", title: "Assistant models & timing", detail: model.assistantConfiguration.model, compact: compact) }.accessibilityIdentifier("assistant-lab")
             }
             Spacer(minLength: 0)
@@ -84,7 +101,7 @@ struct HomeView: View {
             } else {
                 Button { Task { await model.startSession() } } label: {
                     HStack { Image(systemName: "record.circle"); Text(model.isTransitioning ? "Connecting…" : "Start conversation"); Spacer(); Image(systemName: "arrow.right") }
-                }.buttonStyle(MintActionStyle()).disabled(model.isTransitioning).accessibilityIdentifier("start-session")
+                }.buttonStyle(MintActionStyle()).disabled(model.isTransitioning || (model.speechProvider.isPCLocal && !model.pcModelCanStart)).accessibilityIdentifier("start-session")
             }
         }.padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 12)
     }
@@ -154,12 +171,12 @@ struct LiveSessionView: View {
                 Spacer(minLength: 0)
                 Text(String(format: "%02d:%02d", model.elapsedSeconds / 60, model.elapsedSeconds % 60)).monospacedDigit()
             }.font(.system(size: 16))
-            HStack {
-                Text(model.mode == "meta" ? "Est. transcription" : model.speechProvider.isPCLocal ? "PC-local · no API cost" : "On-device transcription")
+            if model.mode == "meta" { HStack {
+                Text("Est. transcription")
                 Spacer()
                 Text((model.activeSession?.transcriptionUsage?.formattedCost ?? "$0.00000") + " USD")
                     .monospacedDigit().accessibilityIdentifier("live-transcription-cost")
-            }.font(.system(size: 12)).foregroundStyle(.secondary)
+            }.font(.system(size: 12)).foregroundStyle(.secondary) }
         }.padding(14).glowPanel(highlight: true)
     }
     private var transcript: some View {

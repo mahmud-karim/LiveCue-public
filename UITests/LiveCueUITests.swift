@@ -30,6 +30,9 @@ final class LiveCueUITests: XCTestCase {
         waitForExpectations(timeout: 5)
         XCTAssertTrue(app.staticTexts["pc-model-message"].label.contains("Docker Desktop"))
         XCTAssertTrue(app.buttons["start-pc-model"].isEnabled)
+        app.tabBars.buttons["Live"].tap()
+        XCTAssertTrue(app.staticTexts["home-pc-model-state"].label.contains("Error"))
+        XCTAssertFalse(app.buttons["start-session"].isEnabled)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "PC startup failure retry"; shot.lifetime = .keepAlways; add(shot)
     }
     func testPairingSurvivesRelaunchAndMissingKeychainCopy() {
@@ -51,7 +54,7 @@ final class LiveCueUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["saved-pc-state"].label.contains("Connected"))
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Saved PC pairing after relaunch"; shot.lifetime = .keepAlways; add(shot)
     }
-    func testPCLocalSpeechChoicesAndZeroCostHistory() {
+    func testPCLocalSpeechChoicesHideCostInConversationAndHistory() {
         let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
         for provider in ["nemotron", "qwen3"] {
             app.tabBars.buttons["Settings"].tap()
@@ -59,11 +62,14 @@ final class LiveCueUITests: XCTestCase {
             XCTAssertTrue(app.buttons["provider-" + provider].waitForExistence(timeout: 5))
             let picker = XCTAttachment(screenshot: app.screenshot()); picker.name = "PC speech model choices"; picker.lifetime = .keepAlways; add(picker)
             app.buttons["provider-" + provider].tap()
+            app.buttons["start-pc-model"].tap()
+            expectation(for: NSPredicate(format: "label == %@", "Ready"), evaluatedWith: app.staticTexts["pc-model-state"])
+            waitForExpectations(timeout: 5)
             app.tabBars.buttons["Live"].tap()
             XCTAssertFalse(app.buttons["download-model"].exists)
             app.buttons["start-session"].tap()
-            XCTAssertTrue(app.staticTexts["PC-local · no API cost"].waitForExistence(timeout: 5))
-            XCTAssertEqual(app.staticTexts["live-transcription-cost"].label, "$0.00000 USD")
+            XCTAssertTrue(app.buttons["assist-button"].waitForExistence(timeout: 5))
+            XCTAssertFalse(app.staticTexts["live-transcription-cost"].exists)
             let live = XCTAttachment(screenshot: app.screenshot()); live.name = provider + " live conversation"; live.lifetime = .keepAlways; add(live)
             app.buttons["assist-button"].tap()
             XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 5))
@@ -73,9 +79,42 @@ final class LiveCueUITests: XCTestCase {
             app.buttons["end-session"].tap()
             XCTAssertTrue(app.buttons["start-session"].waitForExistence(timeout: 5))
             app.tabBars.buttons["History"].tap()
-            XCTAssertTrue(app.staticTexts["history-transcription-cost"].firstMatch.waitForExistence(timeout: 5))
-            XCTAssertTrue(app.staticTexts["history-transcription-cost"].firstMatch.label.contains("$0.00000"))
+            XCTAssertTrue(app.staticTexts["history-local-transcription"].firstMatch.waitForExistence(timeout: 5))
+            XCTAssertFalse(app.staticTexts["history-local-transcription"].firstMatch.label.contains("$"))
+            XCTAssertFalse(app.staticTexts["history-transcription-cost"].exists)
         }
+    }
+    func testHomeShowsPCModelLoadingReadyAndStoppedWithoutScrolling() {
+        let app = XCUIApplication(); app.launchArguments = ["-ui-testing", "-pc-model-slow-start"]; app.launch()
+        app.tabBars.buttons["Settings"].tap(); app.buttons["speech-provider"].tap(); app.buttons["provider-nemotron"].tap()
+        app.buttons["start-pc-model"].tap()
+        app.tabBars.buttons["Live"].tap()
+        let state = app.staticTexts["home-pc-model-state"]
+        XCTAssertTrue(state.waitForExistence(timeout: 5))
+        XCTAssertTrue(state.label.contains("Loading"))
+        XCTAssertFalse(app.buttons["start-session"].isEnabled)
+        let loading = XCTAttachment(screenshot: app.screenshot()); loading.name = "Home PC model loading"; loading.lifetime = .keepAlways; add(loading)
+        expectation(for: NSPredicate(format: "label == %@", "Ready"), evaluatedWith: state)
+        waitForExpectations(timeout: 12)
+        XCTAssertTrue(app.buttons["start-session"].isEnabled)
+        XCTAssertTrue(app.buttons["start-session"].isHittable)
+        XCTAssertTrue(app.buttons["transcription-settings"].isHittable)
+        let ready = XCTAttachment(screenshot: app.screenshot()); ready.name = "Home PC model ready"; ready.lifetime = .keepAlways; add(ready)
+        app.tabBars.buttons["Settings"].tap(); app.buttons["stop-pc-model"].tap()
+        app.tabBars.buttons["Live"].tap()
+        expectation(for: NSPredicate(format: "label CONTAINS %@", "Stopped"), evaluatedWith: state)
+        waitForExpectations(timeout: 8)
+        XCTAssertFalse(app.buttons["start-session"].isEnabled)
+    }
+    func testLunaLowSelectionCanAssist() {
+        let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
+        app.buttons["assistant-lab"].tap()
+        XCTAssertTrue(app.buttons["choose-gpt-6-luna"].waitForExistence(timeout: 5))
+        app.buttons["choose-gpt-6-luna"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["start-session"].tap(); app.buttons["assist-button"].tap()
+        XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.alerts.count, 0)
     }
     func testAssistantSelectionAndTiming() {
         let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
@@ -135,6 +174,7 @@ final class LiveCueUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.buttons["start-session"].waitForExistence(timeout: 5))
         app.buttons["start-session"].tap()
+        XCTAssertFalse(app.staticTexts["live-transcription-cost"].exists)
         app.buttons["assist-button"].tap()
         XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 10))
         let live = XCTAttachment(screenshot: app.screenshot())

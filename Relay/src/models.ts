@@ -13,25 +13,52 @@ export function supportedEfforts(model: string, advertised: string[]): string[] 
   const values = advertised.filter(e => efforts.has(e));
   return [...new Set(noReasoningModels.has(model) ? ["none", ...values] : values)];
 }
-export async function modelCatalog(): Promise<ModelOption[]> {
-  try {
-    const cache = JSON.parse(await readFile(join(process.env.CODEX_HOME || join(homedir(), ".codex"), "models_cache.json"), "utf8"));
-    const models: ModelOption[] = (cache.models || [])
-      .filter((m: any) => m.visibility === "list" && /^gpt-[a-z0-9.-]+$/.test(m.slug))
-      .map((m: any) => ({ id: m.slug, name: String(m.display_name || m.slug),
-        reasoningEfforts: supportedEfforts(m.slug, (m.supported_reasoning_levels || []).map((e: any) => e.effort)) }))
-      .filter((m: ModelOption) => m.reasoningEfforts.length);
-    if (models.length) return models;
-  } catch { /* Offline/first-run fallback, not an account-access guarantee. */ }
-  return [{ id: defaultSelection.model, name: "GPT-5.6 Sol", reasoningEfforts: ["low"] }];
+export class CatalogUnavailableError extends Error {
+  status = 503;
+  code = "ASSISTANT_CATALOG_UNAVAILABLE";
+  constructor() { super("The PC could not read Codex's model list. Keep Codex signed in, then retry. Your selected model has not changed."); }
 }
+export class SelectionUnavailableError extends Error {
+  status = 400;
+  code = "ASSISTANT_SELECTION_UNAVAILABLE";
+  constructor() { super("The selected assistant model or reasoning level is not in this PC's current Codex catalog. Open Assistant models & timing and choose an available combination."); }
+}
+
+// Codex can replace its cache while a request is reading it. A failed read must
+// not invent a smaller catalog and reject a model we just offered to the phone.
+export class ModelCatalogReader {
+  private lastGood: ModelOption[] | undefined;
+  private load: () => Promise<string>;
+  constructor(load: () => Promise<string>) { this.load = load; }
+  async read(): Promise<ModelOption[]> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const cache = JSON.parse(await this.load());
+        if (!Array.isArray(cache.models)) throw new Error("Invalid catalog");
+        const models: ModelOption[] = cache.models
+          .filter((m: any) => m && m.visibility === "list" && /^gpt-[a-z0-9.-]+$/.test(m.slug))
+          .map((m: any) => ({ id: m.slug, name: String(m.display_name || m.slug),
+            reasoningEfforts: supportedEfforts(m.slug, (m.supported_reasoning_levels || []).map((e: any) => e.effort)) }))
+          .filter((m: ModelOption) => m.reasoningEfforts.length);
+        this.lastGood = models;
+        return structuredClone(models);
+      } catch {
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+    if (this.lastGood) return structuredClone(this.lastGood);
+    throw new CatalogUnavailableError();
+  }
+}
+const reader = new ModelCatalogReader(() => readFile(join(process.env.CODEX_HOME || join(homedir(), ".codex"), "models_cache.json"), "utf8"));
+export const modelCatalog = () => reader.read();
 export function validateSelection(value: unknown, catalog: ModelOption[]): ModelSelection {
-  if (value === undefined) return { ...defaultSelection };
+  if (value === undefined) value = { ...defaultSelection };
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid assistant settings.");
   const selection = value as ModelSelection;
   const model = catalog.find(m => m.id === selection.model);
   if (!model || !model.reasoningEfforts.includes(selection.reasoningEffort)) {
-    throw new Error("Model or reasoning level is unavailable. Refresh the PC model list.");
+    throw new SelectionUnavailableError();
   }
   return { model: selection.model, reasoningEffort: selection.reasoningEffort };
 }

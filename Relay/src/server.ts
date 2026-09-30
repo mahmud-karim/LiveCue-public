@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { randomUUID } from "node:crypto";
 import { CodexRunner } from "./codex.ts";
 import { bearerToken, verifyToken, type TokenHashes } from "./security.ts";
-import { modelCatalog, validateSelection } from "./models.ts";
+import { modelCatalog, validateSelection, CatalogUnavailableError, SelectionUnavailableError } from "./models.ts";
 import { attachSpeech } from "./speech.ts";
 import { LocalModelController, installedRuntime, localModel, ModelControlError } from "./local-model.ts";
 import { connectLocal } from "./local-asr.ts";
@@ -12,7 +12,9 @@ const maxBodyBytes = 128 * 1024;
 export type RelayEvent = { type: string; [key: string]: unknown };
 export type RelayControls = { emit?: (event: RelayEvent) => void; accepting?: () => boolean };
 export function createLiveCueServer(tokenHash: TokenHashes | (() => TokenHashes), runner = new CodexRunner(), controls: RelayControls = {},
-  models = new LocalModelController(installedRuntime, status => controls.emit?.({ type: "speech-status", message: status.message })), connect = connectLocal) {
+  models = new LocalModelController(installedRuntime, status => controls.emit?.({ type: "speech-status", message: status.message })), connect = connectLocal, catalog = modelCatalog) {
+  // Warm the last-known-good catalog before the phone sends its first request.
+  void catalog().catch(() => {});
   let busy = false;
   let speechActive = () => false;
   const server = createServer(async (request, response) => {
@@ -27,7 +29,7 @@ export function createLiveCueServer(tokenHash: TokenHashes | (() => TokenHashes)
         return json(response, 200, { ok: true, cloudSpeechReady: Boolean(process.env.LIVECUE_META_API_KEY) });
       }
       if (request.method === "POST" && request.url === "/v1/pair/verify") return json(response, 200, { ok: true });
-      if (request.method === "GET" && request.url === "/v1/models") return json(response, 200, { models: await modelCatalog() });
+      if (request.method === "GET" && request.url === "/v1/models") return json(response, 200, { models: await catalog() });
       if (request.method === "GET" && request.url === "/v1/local-model") {
         const status = await models.status();
         return json(response, 200, { ...status, busy: status.busy || speechActive() });
@@ -49,8 +51,11 @@ export function createLiveCueServer(tokenHash: TokenHashes | (() => TokenHashes)
         const body = await readJson(request);
         const requestReadMs = performance.now() - receivedAt;
         let selection;
-        try { selection = validateSelection(body.assistant, await modelCatalog()); }
-        catch (error) { throw new HttpError(400, (error as Error).message); }
+        try { selection = validateSelection(body.assistant, await catalog()); }
+        catch (error) {
+          if (error instanceof CatalogUnavailableError || error instanceof SelectionUnavailableError) throw error;
+          throw new HttpError(400, "Invalid assistant settings.");
+        }
         const kind = request.url === "/v1/assist" ? "assist" : "summary";
         const requestId = kind === "assist" ? validateRequestId(body) : randomUUID();
         trackedId = requestId;
@@ -71,9 +76,11 @@ export function createLiveCueServer(tokenHash: TokenHashes | (() => TokenHashes)
       if (request.method === "DELETE" && match) return json(response, runner.cancel(decodeURIComponent(match[1])) ? 200 : 404, { ok: true });
       json(response, 404, { error: "Endpoint not found." });
     } catch (error: unknown) {
-      const status = error instanceof HttpError || error instanceof ModelControlError ? error.status : 500;
+      const catalogError = error instanceof CatalogUnavailableError || error instanceof SelectionUnavailableError;
+      const status = error instanceof HttpError || error instanceof ModelControlError || catalogError ? error.status : 500;
+      if (catalogError) controls.emit?.({ type: "speech-status", message: error.message });
       if (trackedId) controls.emit?.({ type: "request-error", requestId: trackedId, message: "Assistant request failed or timed out. Check Codex sign-in and retry." });
-      json(response, status, { error: status === 500 ? "The local assistant request failed." : (error as Error).message });
+      json(response, status, { error: status === 500 ? "The local assistant request failed." : (error as Error).message, ...(catalogError ? { code: error.code } : {}) });
     }
   });
   speechActive = attachSpeech(server, tokenHash, controls, undefined, undefined,

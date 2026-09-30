@@ -124,7 +124,7 @@ struct HistoryView: View {
     private func usageLabel(_ usage: TranscriptionUsage) -> String {
         let name = SpeechProvider(rawValue: usage.provider)?.name ?? "Transcription"
         let suffix = usage.incomplete ? " · incomplete" : ""
-        return "\(name) · \(usage.formattedCost) USD\(suffix)"
+        return usage.provider == "meta" ? "\(name) · \(usage.formattedCost) USD\(suffix)" : "\(name) · Local\(suffix)"
     }
     var body: some View {
         List {
@@ -137,7 +137,7 @@ struct HistoryView: View {
                         Text("\(session.segments.count) transcript segments · \(session.assistantTurns.count) assists").font(.caption).foregroundStyle(.secondary)
                         if let usage = session.transcriptionUsage {
                             Text(usageLabel(usage))
-                                .font(.caption.monospacedDigit()).foregroundStyle(MintTheme.mint).accessibilityIdentifier("history-transcription-cost")
+                                .font(.caption.monospacedDigit()).foregroundStyle(MintTheme.mint).accessibilityIdentifier(usage.provider == "meta" ? "history-transcription-cost" : "history-local-transcription")
                         }
                     }
                 }
@@ -152,7 +152,7 @@ struct SessionDetailView: View {
         List {
             if let usage = session.transcriptionUsage {
                 Section("Transcription usage") {
-                    LabeledContent("Estimated cost", value: usage.formattedCost + " USD")
+                    if usage.provider == "meta" { LabeledContent("Estimated cost", value: usage.formattedCost + " USD") }
                     LabeledContent("Provider", value: SpeechProvider(rawValue: usage.provider)?.name ?? "On-device")
                     if let ms = usage.firstTextMs { LabeledContent("First words from stream start", value: String(format: "%.2f s", ms / 1000)) }
                     if let ms = usage.finalizationMs { LabeledContent("Last stream finalization", value: String(format: "%.2f s", ms / 1000)) }

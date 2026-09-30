@@ -80,7 +80,7 @@ struct PerformanceView: View {
             Text("\(metrics.execution?.model ?? metrics.configuration.model) · \(metrics.execution?.reasoningEffort ?? metrics.configuration.reasoningEffort)").font(.caption).textSelection(.enabled)
             LabeledContent("Tap → answer", value: seconds(metrics.totalMs)).fontWeight(.semibold)
             LabeledContent(metrics.reusedText ? "Transcription (reused)" : "Transcription after tap", value: seconds(metrics.transcriptionMs))
-            LabeledContent("Build text context", value: seconds(metrics.contextMs))
+            LabeledContent("Context + model check", value: seconds(metrics.contextMs))
             LabeledContent("PC round trip", value: seconds(metrics.roundTripMs))
             if let execution = metrics.execution {
                 Divider()

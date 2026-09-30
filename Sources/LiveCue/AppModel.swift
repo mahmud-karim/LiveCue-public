@@ -44,6 +44,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var isControllingPCModel = false
     private var isRefreshingPCModel = false
     var pcModelReady: Bool { pcModelStatus?.isReady(for: mode) == true }
+    var pcModelCanStart: Bool { relayOnline && pcModelReady && pcModelStatus?.busy != true && !isControllingPCModel }
+    var pcModelHomeLabel: String {
+        guard isPaired else { return "Pair PC first" }
+        guard relayOnline else { return "PC offline" }
+        return pcModelStatus?.homeLabel(for: mode) ?? "Checking…"
+    }
     func refreshPCModel() async {
         guard speechProvider.isPCLocal, !isRefreshingPCModel, !isControllingPCModel else { return }
         isRefreshingPCModel = true
@@ -68,7 +74,7 @@ final class AppModel: ObservableObject {
         if isUITesting {
             pcModelStatus = PCModelStatus(state: start ? "starting" : "stopping", model: mode, message: start ? "Starting Docker and loading the PC model…" : "Unloading the PC model…")
             pcModelMessage = pcModelStatus!.message
-            try? await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(for: .seconds(start && ProcessInfo.processInfo.arguments.contains("-pc-model-slow-start") ? 6 : 1))
             if start && ProcessInfo.processInfo.arguments.contains("-pc-model-start-error") {
                 pcModelStatus = PCModelStatus(state: "error", model: mode, message: "Could not load the PC model. Check Docker Desktop and retry.")
             } else {
@@ -94,6 +100,7 @@ final class AppModel: ObservableObject {
         if isUITesting {
             assistantModels = [
                 .init(id: "gpt-6-astra", name: "GPT-6 Astra", reasoningEfforts: ["low", "medium", "high"]),
+                .init(id: "gpt-6-luna", name: "GPT-6 Luna", reasoningEfforts: ["low", "medium", "high"]),
                 .init(id: "gpt-5.6-sol", name: "GPT-5.6 Sol", reasoningEfforts: ["none", "low", "medium", "high"]),
                 .init(id: "gpt-5.6-luna", name: "GPT-5.6 Luna", reasoningEfforts: ["none", "low", "medium", "high"]),
                 .init(id: "gpt-5.3-codex-spark", name: "Codex Spark", reasoningEfforts: ["low", "medium", "high"])
@@ -213,6 +220,10 @@ final class AppModel: ObservableObject {
         isTransitioning = true
         defer { isTransitioning = false }
         guard speechProvider.usesPC || selectedModel != nil else { errorMessage = "Choose and download a transcription model first."; return }
+        if speechProvider.isPCLocal {
+            await refreshPCModel()
+            guard pcModelCanStart else { errorMessage = "PC speech model: \(pcModelHomeLabel). Open Transcription settings to start it or check its status."; return }
+        }
         if speechProvider.usesPC, !isUITesting {
             guard isPaired else { errorMessage = RelayError.notPaired.localizedDescription; return }
             if !relayOnline { await checkRelay() }
@@ -279,6 +290,13 @@ final class AppModel: ObservableObject {
             request.assistant = configuration
             guard !request.transcript.isEmpty || !(request.partialTranscript ?? "").isEmpty else {
                 errorMessage = "No speech was recognized yet."; return
+            }
+            // Refresh before sending text, but never silently switch the user's model.
+            assistStage = "Checking model…"
+            if isUITesting { await refreshAssistantModels() }
+            else { assistantModels = try await relay.models(endpoint: endpoint, token: token) }
+            guard assistantModels.contains(where: { $0.id == configuration.model && $0.reasoningEfforts.contains(configuration.reasoningEffort) }) else {
+                throw RelayError.server("\(configuration.model) / \(configuration.reasoningEffort) is not in this PC's current catalog. Open Assistant models & timing and choose an available combination. Your selection has not changed.")
             }
             assistStage = "Thinking…"
             lastAssistRequest = request
