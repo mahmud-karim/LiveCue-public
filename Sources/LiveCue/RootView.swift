@@ -92,7 +92,7 @@ struct HomeView: View {
             VStack(spacing: compact ? 8 : 10) {
                 NavigationLink { PairingView() } label: { SetupRow(icon: "desktopcomputer", title: model.isPaired ? "PC connection" : "Pair Windows PC", detail: model.isPaired ? (model.relayOnline ? "Saved · connected" : "Saved · reconnecting") : "Required", compact: compact) }.accessibilityIdentifier("pair-pc")
                 NavigationLink { SettingsView() } label: { SetupRow(icon: "waveform", title: "Transcription & appearance", detail: model.speechProvider.isPCLocal ? model.pcModelHomeLabel : "Cloud, PC or iPhone speech", compact: compact) }.accessibilityIdentifier("transcription-settings")
-                NavigationLink { AssistantLabView() } label: { SetupRow(icon: "slider.horizontal.3", title: "Assistant models & timing", detail: model.assistantConfiguration.model, compact: compact) }.accessibilityIdentifier("assistant-lab")
+                NavigationLink { AssistantLabView() } label: { SetupRow(icon: "slider.horizontal.3", title: "Assistant models & timing", detail: model.assistantConfiguration.model.isEmpty ? "Choose an OpenRouter model" : model.assistantConfiguration.model, compact: compact) }.accessibilityIdentifier("assistant-lab")
             }
             Spacer(minLength: 0)
             if !model.speechProvider.usesPC && model.selectedModel == nil {
@@ -117,7 +117,7 @@ private struct SetupRow: View {
                 .background(MintTheme.teal.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
-                Text(detail).font(.system(size: 12)).foregroundStyle(Color.gray)
+                Text(detail).font(.system(size: 12)).foregroundStyle(Color.gray).lineLimit(1)
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right").font(.system(size: 16)).foregroundStyle(.secondary)

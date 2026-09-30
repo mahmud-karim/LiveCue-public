@@ -1,5 +1,15 @@
 # LiveCue
 
+## 0.5.6 — direct OpenRouter answers
+
+In **Assistant models & timing → Provider**, choose **OpenRouter · direct**, paste your API key into the masked field, tap **Save key**, optionally verify it without an inference request, and choose a model from the searchable catalog. Each Assist calls the selected model directly from the iPhone. Keys stay in iPhone Keychain, never in source, history or the PC relay. Removing the key stops access; there is no automatic switch to Codex, model fallback or paid retry. Stopping a session does not send an OpenRouter summary request. PC and OpenRouter selections are saved separately.
+
+OpenRouter charges are separate from a ChatGPT subscription. Run details save provider-reported request cost in credits and token usage when available; missing usage is not treated as free. Model-picker prices are current catalog prices per million tokens, not an exact request quote. Provider-default reasoning is used on this route.
+
+OpenRouter replaces the **answer** service, not transcription. Nemotron/Qwen3 still need the Windows GPU service; Meta still streams through the PC. Choose Parakeet or Voz on iPhone for a workflow with no PC dependency. Transcripts and rolling memory go to OpenRouter and its selected model provider on Assist, subject to their policies.
+
+The PC catalog now queries `model/list` from the same current Codex executable used for answers, with a coalesced five-minute in-memory cache and last-good recovery. It no longer trusts the shared `models_cache.json`, which unrelated older CLI clients can overwrite. This addresses the repeated Luna/Low catalog rejection without silently changing model selection.
+
 ### 0.5.4: phone controls for PC speech models
 
 Select Nemotron or Qwen3 in Settings to start/stop its PC GPU service, see loading time and readiness, and retry startup failures. Start launches verified Docker Desktop if needed. Stop unloads only LiveCue's idle model; images and weights stay installed. Model operations require saved pairing and refuse to interrupt active transcription. Update both the relay and Funnel proxy along with the IPA.

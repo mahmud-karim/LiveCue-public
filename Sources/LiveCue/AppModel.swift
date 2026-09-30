@@ -52,6 +52,7 @@ final class AppModel: ObservableObject {
     }
     func selectAssistantProvider(_ provider: AssistantProvider) {
         guard !isAssisting, provider != assistantConfiguration.provider else { return }
+        if let data = try? JSONEncoder().encode(assistantConfiguration) { UserDefaults.standard.set(data, forKey: "assistantConfiguration." + assistantConfiguration.provider.rawValue) }
         assistantConfiguration = UserDefaults.standard.data(forKey: "assistantConfiguration." + provider.rawValue)
             .flatMap { try? JSONDecoder().decode(AssistantConfiguration.self, from: $0) }
             ?? (provider == .codex ? AssistantConfiguration() : AssistantConfiguration(model: "", reasoningEffort: "default", provider: .openrouter))
@@ -154,7 +155,9 @@ final class AppModel: ObservableObject {
         }
         guard let token, isPaired else { modelCatalogMessage = "Pair your PC first."; return }
         do {
-            assistantModels = try await relay.models(endpoint: endpoint, token: token)
+            let options = try await relay.models(endpoint: endpoint, token: token)
+            guard assistantConfiguration.provider == provider else { return }
+            assistantModels = options
             modelCatalogMessage = "From this PC's Codex catalog. Access still depends on your subscription."
         } catch { modelCatalogMessage = "Could not load models. Restart the updated PC app and check the connection. " + error.localizedDescription }
     }

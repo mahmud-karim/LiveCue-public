@@ -19,6 +19,7 @@ export function readCurrentCodexCatalog(executable = process.env.LIVECUE_CODEX_E
     child.stdin.on("error", () => finish());
     const send = (value: unknown) => child.stdin.write(JSON.stringify(value) + "\n");
     child.stdout.on("data", chunk => {
+      if (settled) return;
       buffer += chunk;
       if (buffer.length > 1024 * 1024) return finish();
       let end;
