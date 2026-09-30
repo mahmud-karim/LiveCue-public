@@ -58,17 +58,17 @@ struct HomeView: View {
                 VoiceArtwork(level: 0, listening: false, homeIcon: true).frame(height: compact ? 88 : 120)
                 Text("LiveCue").font(.system(size: compact ? 30 : 36, weight: .bold))
                 Text("A clearer conversation.").font(.system(size: compact ? 17 : 20)).foregroundStyle(.secondary)
-                Text(model.mode == "meta" ? "Live captions with Meta Muse.\nTap Assist for an answer from your PC." : model.speechProvider.isPCLocal ? "Live captions on your PC's GPU.\nTap Assist for an answer from your PC." : "Transcription on your iPhone.\nTap Assist for an answer from your PC.")
+                Text((model.mode == "meta" ? "Live captions with Meta Muse." : model.speechProvider.isPCLocal ? "Live captions on your PC's GPU." : "Transcription on your iPhone.") + "\nTap Assist for an answer from " + (model.assistantConfiguration.provider == .codex ? "your PC." : "OpenRouter."))
                     .font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                Label(model.relayOnline ? "PC online" : model.isPaired ? "PC reconnecting" : "PC offline", systemImage: "circle.fill")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(model.relayOnline ? MintTheme.mint : .orange)
+                Label(!model.needsPC ? "OpenRouter direct" : model.relayOnline ? "PC online" : model.isPaired ? "PC reconnecting" : "PC offline", systemImage: "circle.fill")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(!model.needsPC || model.relayOnline ? MintTheme.mint : .orange)
                     .padding(.horizontal, 16).padding(.vertical, 7).background(MintTheme.teal.opacity(0.55), in: Capsule())
             }
             VStack(spacing: 10) {
                 HStack {
                     Label("System readiness", systemImage: "checklist").font(.system(size: 16, weight: .semibold))
                     Spacer()
-                    Text(model.relayOnline && (model.speechProvider.isPCLocal ? model.pcModelCanStart : model.speechProvider.usesPC || model.selectedModel != nil) ? "✓ Ready" : "Setup")
+                    Text(model.systemReady ? "✓ Ready" : "Setup")
                         .font(.system(size: 12, weight: .medium)).foregroundStyle(MintTheme.mint)
                 }
                 HStack {
@@ -76,7 +76,7 @@ struct HomeView: View {
                     Text(model.speechProvider.usesPC ? model.speechProvider.name : model.selectedModel?.displayName ?? "Not configured").foregroundStyle(.secondary)
                 }.font(.system(size: 13))
                 Divider().overlay(MintTheme.mint.opacity(0.08))
-                HStack { Label("Windows relay", systemImage: "desktopcomputer"); Spacer(); Text(model.isPaired ? "Paired" : "Pairing required").foregroundStyle(.secondary) }.font(.system(size: 13))
+                HStack { Label("Windows relay", systemImage: "desktopcomputer"); Spacer(); Text(!model.needsPC ? "Not required" : model.isPaired ? "Paired" : "Pairing required").foregroundStyle(.secondary) }.font(.system(size: 13))
                 if model.speechProvider.isPCLocal {
                     Divider().overlay(MintTheme.mint.opacity(0.08))
                     HStack(spacing: 7) {

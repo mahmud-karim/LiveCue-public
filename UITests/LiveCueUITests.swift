@@ -1,6 +1,44 @@
 import XCTest
 
 final class LiveCueUITests: XCTestCase {
+    func testDirectOpenRouterKeyPersistenceAndThreeAssistsWithoutPC() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-openrouter-ui-reset", "-on-device-ready", "-pc-offline"]
+        app.launch(); app.buttons["assistant-lab"].tap()
+        app.buttons["assistant-provider"].tap()
+        app.buttons["assistant-provider-openrouter"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let key = app.secureTextFields["openrouter-key"]
+        XCTAssertTrue(key.waitForExistence(timeout: 5)); key.tap(); key.typeText("synthetic-mobile-key")
+        app.buttons["save-openrouter-key"].tap()
+        XCTAssertEqual(app.staticTexts["openrouter-key-state"].label, "Key saved")
+        app.buttons["verify-openrouter-key"].tap()
+        XCTAssertFalse(app.staticTexts["synthetic-mobile-key"].exists)
+        app.swipeUp(); app.buttons["openrouter-model-picker"].tap()
+        XCTAssertTrue(app.buttons["choose-test/direct"].waitForExistence(timeout: 5)); app.buttons["choose-test/direct"].tap()
+        let settings = XCTAttachment(screenshot: app.screenshot()); settings.name = "OpenRouter direct settings - key hidden"; settings.lifetime = .keepAlways; add(settings)
+        app.terminate()
+        app.launchArguments = ["-ui-testing", "-openrouter-persistence-test", "-on-device-ready", "-pc-offline"]
+        app.launch(); app.buttons["assistant-lab"].tap()
+        XCTAssertEqual(app.staticTexts["openrouter-key-state"].label, "Key saved")
+        app.swipeUp(); XCTAssertEqual(app.staticTexts["selected-assistant-model"].label, "test/direct")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["OpenRouter direct"].exists)
+        app.buttons["start-session"].tap()
+        for _ in 0..<3 {
+            app.buttons["assist-button"].tap()
+            XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 10)); XCTAssertEqual(app.alerts.count, 0)
+            app.buttons["dismiss-answer"].tap()
+        }
+        app.buttons["end-session"].tap(); app.buttons["assistant-lab"].tap()
+        app.swipeUp()
+        let runs = XCTAttachment(screenshot: app.screenshot()); runs.name = "Three consecutive OpenRouter answers"; runs.lifetime = .keepAlways; add(runs)
+        app.swipeDown(); app.buttons["remove-openrouter-key"].tap()
+        XCTAssertEqual(app.staticTexts["openrouter-key-state"].label, "No key saved")
+        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["start-session"].tap(); app.buttons["assist-button"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "OpenRouter API key")).firstMatch.exists)
+    }
     func testPCModelStartStopInSettings() {
         let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
         app.tabBars.buttons["Settings"].tap()

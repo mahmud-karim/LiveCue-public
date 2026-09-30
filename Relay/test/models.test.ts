@@ -4,6 +4,18 @@ import { once } from "node:events";
 import { modelCatalog, ModelCatalogReader, CatalogUnavailableError, supportedEfforts, validateSelection } from "../src/models.ts";
 import { createLiveCueServer } from "../src/server.ts";
 import { hashToken } from "../src/security.ts";
+import { CurrentCatalogSource } from "../src/codex-catalog.ts";
+
+test("repeated model checks share one current CLI catalog, not unrelated cache writes", async () => {
+  let calls = 0;
+  const source = new CurrentCatalogSource(async () => { calls++; return lunaCache; });
+  const reader = new ModelCatalogReader(() => source.read());
+  for (let i = 0; i < 5; i++) {
+    const offered = await reader.read();
+    assert.equal(validateSelection({model:"gpt-6-luna", reasoningEffort:"low"}, offered).model, "gpt-6-luna");
+  }
+  assert.equal(calls, 1);
+});
 
 const lunaCache = JSON.stringify({ models: [{ slug: "gpt-6-luna", visibility: "list", supported_reasoning_levels: [{ effort: "low" }] }] });
 test("temporary cache read failures keep Luna Low, but a valid removal takes effect", async () => {

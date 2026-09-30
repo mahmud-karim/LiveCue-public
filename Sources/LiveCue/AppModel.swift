@@ -34,7 +34,44 @@ final class AppModel: ObservableObject {
     @Published var isTransitioning = false
     @Published var assistStage = ""
     @Published var assistantConfiguration = (UserDefaults.standard.data(forKey: "assistantConfiguration").flatMap { try? JSONDecoder().decode(AssistantConfiguration.self, from: $0) }) ?? AssistantConfiguration() {
-        didSet { if let data = try? JSONEncoder().encode(assistantConfiguration) { UserDefaults.standard.set(data, forKey: "assistantConfiguration") } }
+        didSet { if let data = try? JSONEncoder().encode(assistantConfiguration) {
+            UserDefaults.standard.set(data, forKey: "assistantConfiguration")
+            UserDefaults.standard.set(data, forKey: "assistantConfiguration." + assistantConfiguration.provider.rawValue)
+        } }
+    }
+    @Published private(set) var hasOpenRouterKey = false
+    @Published private(set) var openRouterKeyMessage = ""
+    @Published private(set) var isVerifyingOpenRouterKey = false
+    private let openRouter = OpenRouterClient()
+    private var openRouterKeyAccount: String { isUITesting ? "openrouter-api-key-ui-test" : "openrouter-api-key" }
+    var needsPC: Bool { speechProvider.usesPC || assistantConfiguration.provider == .codex }
+    var systemReady: Bool {
+        let speechReady = speechProvider.isPCLocal ? pcModelCanStart : speechProvider.usesPC ? relayOnline : selectedModel != nil
+        let answerReady = assistantConfiguration.provider == .codex ? relayOnline : hasOpenRouterKey && !assistantConfiguration.model.isEmpty
+        return speechReady && answerReady
+    }
+    func selectAssistantProvider(_ provider: AssistantProvider) {
+        guard !isAssisting, provider != assistantConfiguration.provider else { return }
+        assistantConfiguration = UserDefaults.standard.data(forKey: "assistantConfiguration." + provider.rawValue)
+            .flatMap { try? JSONDecoder().decode(AssistantConfiguration.self, from: $0) }
+            ?? (provider == .codex ? AssistantConfiguration() : AssistantConfiguration(model: "", reasoningEffort: "default", provider: .openrouter))
+        assistantModels = []; modelCatalogMessage = ""
+    }
+    @discardableResult func saveOpenRouterKey(_ raw: String) -> Bool {
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty, !key.contains(where: { $0.isWhitespace || $0.isNewline }) else { openRouterKeyMessage = "Enter a valid API key."; return false }
+        do { try KeychainStore.set(key, account: openRouterKeyAccount); hasOpenRouterKey = true; openRouterKeyMessage = "Key saved securely on this iPhone."; return true }
+        catch { openRouterKeyMessage = "Could not save the key in Keychain. Try again."; return false }
+    }
+    func removeOpenRouterKey() {
+        KeychainStore.remove(account: openRouterKeyAccount); hasOpenRouterKey = false; openRouterKeyMessage = "Key removed."
+    }
+    func verifyOpenRouterKey() async {
+        guard !isVerifyingOpenRouterKey else { return }
+        guard let key = KeychainStore.get(account: openRouterKeyAccount) else { openRouterKeyMessage = OpenRouterError.missingKey.localizedDescription; return }
+        isVerifyingOpenRouterKey = true; defer { isVerifyingOpenRouterKey = false }
+        do { if !isUITesting { try await openRouter.verifyKey(key) }; openRouterKeyMessage = "Key verified. No inference request was made." }
+        catch { openRouterKeyMessage = error.localizedDescription }
     }
     @Published var assistantModels: [AssistantModelOption] = []
     @Published var modelCatalogMessage = ""
@@ -97,6 +134,15 @@ final class AppModel: ObservableObject {
         guard !isLoadingModels else { return }
         isLoadingModels = true
         defer { isLoadingModels = false }
+        let provider = assistantConfiguration.provider
+        if provider == .openrouter {
+            do {
+                let options = isUITesting ? [AssistantModelOption(id: "test/direct", name: "Direct test model", reasoningEfforts: ["default"])] : try await openRouter.models()
+                guard assistantConfiguration.provider == provider else { return }
+                assistantModels = options; modelCatalogMessage = "Direct from OpenRouter. Choose a model; API charges are separate from your Codex subscription."
+            } catch { modelCatalogMessage = error.localizedDescription }
+            return
+        }
         if isUITesting {
             assistantModels = [
                 .init(id: "gpt-6-astra", name: "GPT-6 Astra", reasoningEfforts: ["low", "medium", "high"]),
@@ -139,8 +185,9 @@ final class AppModel: ObservableObject {
         selectedModelVariant = nil
         if isUITesting {
             mode = "meta"
-            assistantConfiguration = AssistantConfiguration()
+            if !ProcessInfo.processInfo.arguments.contains("-openrouter-persistence-test") { assistantConfiguration = AssistantConfiguration() }
             selectedModelVariant = "voz"
+            if ProcessInfo.processInfo.arguments.contains("-on-device-ready") { mode = "parakeet"; selectedModelVariant = "parakeet" }
             if ProcessInfo.processInfo.arguments.contains("-save-pairing-fixture") {
                 let fixture = try! PairingPayload.parse("{\"endpoint\":\"https://saved-pc.example.test:10000/\",\"token\":\"persistent-synthetic-test-token\"}")
                 try! pairingStore.save(fixture)
@@ -153,6 +200,8 @@ final class AppModel: ObservableObject {
             endpoint = "https://livecue.test"
             relayOnline = true
         }
+        if isUITesting && ProcessInfo.processInfo.arguments.contains("-openrouter-ui-reset") { KeychainStore.remove(account: openRouterKeyAccount) }
+        hasOpenRouterKey = KeychainStore.get(account: openRouterKeyAccount) != nil
         if let savedPairing, !isUITesting || ProcessInfo.processInfo.arguments.contains("-pairing-persistence-test") { endpoint = savedPairing.endpoint }
         Task { await checkRelay() }
     }
@@ -177,7 +226,7 @@ final class AppModel: ObservableObject {
         guard !isCheckingRelay else { return }
         if savedPairing == nil, let restored = pairingStore.load(legacyEndpoint: endpoint) { savedPairing = restored; endpoint = restored.endpoint }
         guard isPaired else { relayOnline = false; return }
-        if isUITesting { relayOnline = true; connectionMessage = "Connected. Your pairing is saved on this iPhone."; return }
+        if isUITesting { relayOnline = !ProcessInfo.processInfo.arguments.contains("-pc-offline"); connectionMessage = relayOnline ? "Connected. Your pairing is saved on this iPhone." : "PC offline."; return }
         isCheckingRelay = true
         defer { isCheckingRelay = false }
         do {
@@ -273,7 +322,9 @@ final class AppModel: ObservableObject {
 
     func assist(reuseText: Bool = false) async {
         guard activeSession != nil, !isAssisting, !isTransitioning else { return }
-        guard let token = token ?? (isUITesting ? "test" : nil) else { errorMessage = RelayError.notPaired.localizedDescription; return }
+        let token = token ?? (isUITesting ? "test" : nil)
+        if assistantConfiguration.provider == .codex && token == nil { errorMessage = RelayError.notPaired.localizedDescription; return }
+        if assistantConfiguration.provider == .openrouter && !hasOpenRouterKey { errorMessage = OpenRouterError.missingKey.localizedDescription; return }
         isAssisting = true
         let totalStarted = ProcessInfo.processInfo.systemUptime
         let configuration = assistantConfiguration
@@ -293,9 +344,12 @@ final class AppModel: ObservableObject {
             }
             // Refresh before sending text, but never silently switch the user's model.
             assistStage = "Checking model…"
-            if isUITesting { await refreshAssistantModels() }
-            else { assistantModels = try await relay.models(endpoint: endpoint, token: token) }
-            guard assistantModels.contains(where: { $0.id == configuration.model && $0.reasoningEfforts.contains(configuration.reasoningEffort) }) else {
+            if configuration.provider == .openrouter {
+                if assistantModels.isEmpty { await refreshAssistantModels() }
+            } else if isUITesting { await refreshAssistantModels() }
+            else { assistantModels = try await relay.models(endpoint: endpoint, token: token!) }
+            guard let option = assistantModels.first(where: { $0.id == configuration.model && $0.reasoningEfforts.contains(configuration.reasoningEffort) }) else {
+                if configuration.provider == .openrouter { throw OpenRouterError.noModel }
                 throw RelayError.server("\(configuration.model) / \(configuration.reasoningEffort) is not in this PC's current catalog. Open Assistant models & timing and choose an available combination. Your selection has not changed.")
             }
             assistStage = "Thinking…"
@@ -306,11 +360,17 @@ final class AppModel: ObservableObject {
             if isUITesting {
                 response = AssistResponse(detectedQuestion: "What is the main advantage of local transcription?", answer: "Your audio stays on the iPhone, which improves privacy and keeps transcription working without a cloud speech service.", details: "Only the text context is sent through your private Tailscale connection to the Codex relay on your PC.", memory: SessionMemory(summary: "Discussing local transcription privacy.", throughSegmentId: current.segments.last?.id))
                 response.execution = RelayExecution(model: configuration.model, reasoningEffort: configuration.reasoningEffort, codexMs: 600, relayTotalMs: 620, requestReadMs: 2, relayOverheadMs: 20)
-            } else { response = try await relay.assist(request, endpoint: endpoint, token: token) }
-            guard let execution = response.execution,
+                if configuration.provider == .openrouter { response.execution?.usage = AssistantUsage(promptTokens: 120, completionTokens: 40, costCredits: 0.0001) }
+            } else if configuration.provider == .openrouter {
+                guard let key = KeychainStore.get(account: openRouterKeyAccount) else { throw OpenRouterError.missingKey }
+                response = try await openRouter.assist(request, option: option, key: key, throughSegmentId: current.segments.last?.id)
+            } else { response = try await relay.assist(request, endpoint: endpoint, token: token!) }
+            if configuration.provider == .codex {
+              guard let execution = response.execution,
                   execution.model == configuration.model,
                   execution.reasoningEffort == configuration.reasoningEffort else {
                 throw RelayError.server("The PC did not confirm the selected model. Restart the updated LiveCue Desktop app, then retry.")
+              }
             }
             let roundTripMs = isUITesting ? 680 : (ProcessInfo.processInfo.systemUptime - roundTripStarted) * 1000
             let metrics = AssistPerformance(configuration: configuration, speechModel: mode, reusedText: reuseText, transcriptionMs: sttMs, contextMs: contextMs, roundTripMs: roundTripMs, totalMs: isUITesting ? 700 : (ProcessInfo.processInfo.systemUptime - totalStarted) * 1000, lastLiveChunkMs: mode == "parakeet" ? transcriber.lastLiveChunkMs : nil, transcriptCharacters: request.transcript.count + (request.partialTranscript?.count ?? 0), execution: response.execution)
@@ -339,7 +399,7 @@ final class AppModel: ObservableObject {
         sessions = repository.all()
         activeSession = nil
         // Return navigation after audio drains, without waiting on a summary.
-        if let token = token, !isUITesting {
+        if let token = token, !isUITesting, assistantConfiguration.provider == .codex {
             let saved = current, configuration = assistantConfiguration, address = endpoint
             Task {
                 if let notes = try? await relay.summarize(session: saved, endpoint: address, token: token, assistant: configuration),

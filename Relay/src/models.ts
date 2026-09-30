@@ -1,6 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { CurrentCatalogSource } from "./codex-catalog.ts";
 
 export type ModelOption = { id: string; name: string; reasoningEfforts: string[] };
 export type ModelSelection = { model: string; reasoningEffort: string };
@@ -50,7 +48,8 @@ export class ModelCatalogReader {
     throw new CatalogUnavailableError();
   }
 }
-const reader = new ModelCatalogReader(() => readFile(join(process.env.CODEX_HOME || join(homedir(), ".codex"), "models_cache.json"), "utf8"));
+const source = new CurrentCatalogSource();
+const reader = new ModelCatalogReader(() => source.read());
 export const modelCatalog = () => reader.read();
 export function validateSelection(value: unknown, catalog: ModelOption[]): ModelSelection {
   if (value === undefined) value = { ...defaultSelection };

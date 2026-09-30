@@ -26,7 +26,7 @@ struct SettingsView: View {
                     NavigationLink("Speech benchmark") { ModelLabView() }
                 }
                 NavigationLink { AssistantLabView() } label: { Label("Assistant models & timing", systemImage: "slider.horizontal.3") }.accessibilityIdentifier("assistant-lab")
-                Text(model.mode == "meta" ? "Audio streams through your PC to Meta. No model download. Cloud usage is billed by Meta. Recording stops if the connection fails; resume to reconnect." : model.speechProvider.isPCLocal ? "Audio streams to the model on your PC's GPU. No speech API charges. Keep Docker Desktop and LiveCue Desktop running. Switching models may take a minute; recording starts only when ready." : "Audio is transcribed on this iPhone. Only text is sent to your PC.").font(.system(size: 13)).foregroundStyle(.secondary)
+                Text(model.mode == "meta" ? "Audio streams through your PC to Meta. No model download. Cloud usage is billed by Meta. Recording stops if the connection fails; resume to reconnect." : model.speechProvider.isPCLocal ? "Audio streams to the model on your PC's GPU. No speech API charges. Keep Docker Desktop and LiveCue Desktop running. Switching models may take a minute; recording starts only when ready." : "Audio is transcribed on this iPhone. Only text is sent to " + (model.assistantConfiguration.provider == .codex ? "your PC." : "OpenRouter when you tap Assist.")).font(.system(size: 13)).foregroundStyle(.secondary)
             }
             if model.speechProvider.isPCLocal { PCModelControls() }
             Section("Assistant instructions") {

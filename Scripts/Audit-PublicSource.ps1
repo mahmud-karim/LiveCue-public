@@ -11,7 +11,7 @@ foreach ($relative in $files) {
     $content = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($path))
     $wide = [Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes($path))
     if ($content.Contains($secret) -or $wide.Contains($secret) -or $content.Contains([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($secret)))) { $blocked += $relative }
-    if ($content -match '(?<![A-Za-z0-9_])LLM_[A-Za-z0-9_.-]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{30,}') { $blocked += $relative }
+    if ($content -match '(?<![A-Za-z0-9_])LLM_[A-Za-z0-9_.-]{20,}|sk-or-v1-[A-Za-z0-9_-]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{30,}') { $blocked += $relative }
     if ($relative -match '(?i)(meta-stt-key|relay\.json|auth\.json|\.env$|\.wav$|credential.*\.xml$)') { $blocked += $relative }
 }
 $secret = $null
