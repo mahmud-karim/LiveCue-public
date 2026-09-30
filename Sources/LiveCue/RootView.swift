@@ -3,6 +3,7 @@ import LiveCueCore
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         Group {
             if model.activeSession != nil {
@@ -18,6 +19,7 @@ struct RootView: View {
             }
         }
         .tint(MintTheme.mint)
+        .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await model.checkRelay() } } }
         .task {
             while !Task.isCancelled {
                 await model.checkRelay()
@@ -52,7 +54,7 @@ struct HomeView: View {
                 Text("A clearer conversation.").font(.system(size: compact ? 17 : 20)).foregroundStyle(.secondary)
                 Text(model.mode == "meta" ? "Live captions with Meta Muse.\nTap Assist for an answer from your PC." : model.speechProvider.isPCLocal ? "Live captions on your PC's GPU.\nTap Assist for an answer from your PC." : "Transcription on your iPhone.\nTap Assist for an answer from your PC.")
                     .font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                Label(model.relayOnline ? "PC online" : "PC offline", systemImage: "circle.fill")
+                Label(model.relayOnline ? "PC online" : model.isPaired ? "PC reconnecting" : "PC offline", systemImage: "circle.fill")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(model.relayOnline ? MintTheme.mint : .orange)
                     .padding(.horizontal, 16).padding(.vertical, 7).background(MintTheme.teal.opacity(0.55), in: Capsule())
             }
@@ -71,7 +73,7 @@ struct HomeView: View {
                 HStack { Label("Windows relay", systemImage: "desktopcomputer"); Spacer(); Text(model.isPaired ? "Paired" : "Pairing required").foregroundStyle(.secondary) }.font(.system(size: 13))
             }.padding(compact ? 12 : 15).glowPanel()
             VStack(spacing: compact ? 8 : 10) {
-                NavigationLink { PairingView() } label: { SetupRow(icon: "desktopcomputer", title: "Pair Windows PC", detail: model.isPaired ? "Configured" : "Required", compact: compact) }.accessibilityIdentifier("pair-pc")
+                NavigationLink { PairingView() } label: { SetupRow(icon: "desktopcomputer", title: model.isPaired ? "PC connection" : "Pair Windows PC", detail: model.isPaired ? (model.relayOnline ? "Saved · connected" : "Saved · reconnecting") : "Required", compact: compact) }.accessibilityIdentifier("pair-pc")
                 NavigationLink { SettingsView() } label: { SetupRow(icon: "waveform", title: "Transcription & appearance", detail: "Cloud, PC or iPhone speech", compact: compact) }
                 NavigationLink { AssistantLabView() } label: { SetupRow(icon: "slider.horizontal.3", title: "Assistant models & timing", detail: model.assistantConfiguration.model, compact: compact) }.accessibilityIdentifier("assistant-lab")
             }

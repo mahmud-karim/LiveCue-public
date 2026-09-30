@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { createInterface } from "node:readline";
 import { CodexRunner } from "./codex.ts";
 import { createLiveCueServer } from "./server.ts";
-import { defaultConfigPath, loadOrCreatePairing } from "./security.ts";
+import { defaultConfigPath, loadOrCreatePairing, pairingCode, pairingHashes } from "./security.ts";
 
 const require = createRequire(import.meta.url);
 const QRCode = require("qrcode-terminal/vendor/QRCode");
@@ -11,11 +11,11 @@ const level = require("qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel");
 const emit = (event: unknown) => process.stdout.write(JSON.stringify(event) + "\n");
 const endpoint = process.env.LIVECUE_PUBLIC_ENDPOINT;
 if (!endpoint?.startsWith("https://")) throw new Error("Start this service through LiveCue Desktop with Tailscale connected.");
-let { config, plaintextToken } = await loadOrCreatePairing(defaultConfigPath(), false);
+let { config, plaintextToken, created } = await loadOrCreatePairing(defaultConfigPath(), false);
 let accepting = true;
 let closing = false;
 const runner = new CodexRunner();
-const server = createLiveCueServer(() => config.tokenHash, runner, { emit, accepting: () => accepting });
+const server = createLiveCueServer(() => pairingHashes(config), runner, { emit, accepting: () => accepting });
 function showPairing(token: string) {
   const payload = JSON.stringify({ endpoint, token });
   const qr = new QRCode(-1, level.M); qr.addData(payload); qr.make();
@@ -35,7 +35,9 @@ server.on("error", (error: NodeJS.ErrnoException) => {
 });
 server.listen(Number(process.env.LIVECUE_PORT || 47831), "127.0.0.1", () => {
   emit({ type: "ready", endpoint, model: "gpt-5.6-sol", accepting, cloudSpeechReady: Boolean(process.env.LIVECUE_META_API_KEY), port: (server.address() as { port: number }).port });
-  if (plaintextToken) { showPairing(plaintextToken); plaintextToken = undefined; }
+  if (plaintextToken && created) showPairing(plaintextToken);
+  plaintextToken = undefined;
+  if (!created) emit({ type: "notice", message: "Saved pairing restored. Existing iPhones reconnect automatically; Show QR keeps their pairing valid." });
 });
 function shutdown() {
   if (closing) return; closing = true;
@@ -53,7 +55,7 @@ input.on("line", line => {
     if (command.action === "shutdown") { shutdown(); return; }
     if (command.action === "pause") { accepting = !Boolean(command.paused); emit({ type: "state", accepting }); }
     if (command.action === "pair") {
-      const fresh = await loadOrCreatePairing(defaultConfigPath(), true);
+      const fresh = await pairingCode(defaultConfigPath());
       config = fresh.config; showPairing(fresh.plaintextToken!);
     }
   }).catch(() => emit({ type: "notice", message: "The desktop command failed. Please retry." }));

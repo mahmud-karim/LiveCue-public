@@ -1,5 +1,11 @@
 # LiveCue
 
+## 0.5.3 — persistent PC pairing
+
+Pair once. The iPhone saves the address and credential together in Keychain and an app-container file protected until first unlock and excluded from backups. Existing Keychain pairings migrate automatically. LiveContainer updates should replace the app in its existing data container to preserve settings and history.
+
+Windows saves a recoverable QR credential with current-user DPAPI encryption. Restarting the desktop or redisplaying its QR retains authorization. Upgrading old hash-only PC credentials preserves the old phone's token too. Only an explicit `--reset-pairing` revokes them. The connection screen restores a saved PC, offers Reconnect, and distinguishes rejection from a temporary network/TLS failure; it retries automatically after reopening the app. A TLS failure is a secure-connection problem and scanning the QR cannot repair it.
+
 ## 0.5.1 — focused conversation UI
 
 Mint-glow home screen with a bottom Start button; full-screen conversation with microphone-driven waveform and no navigation tabs until Stop. Optional assistant instructions now persist in Settings. Answers open in a dismissible sheet so the transcript remains readable.

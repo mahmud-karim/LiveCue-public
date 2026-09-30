@@ -18,6 +18,9 @@ final class AppModel: ObservableObject {
     @Published var latestAnswer: AssistantTurn?
     @Published var errorMessage: String?
     @Published var relayOnline = false
+    @Published private(set) var connectionMessage = ""
+    @Published private(set) var pairingRejected = false
+    @Published private(set) var isCheckingRelay = false
     @Published var endpoint = UserDefaults.standard.string(forKey: "relayEndpoint") ?? ""
     @Published var selectedModelVariant = UserDefaults.standard.string(forKey: "selectedModel")
     @Published var elapsedSeconds = 0
@@ -67,12 +70,17 @@ final class AppModel: ObservableObject {
     private var fixtureUsage = TranscriptionUsage()
     private var fixtureStream = UUID()
     private var fixtureStreamSeconds = 0
+    private let pairingStore: PairingStore
+    private var savedPairing: PairingPayload?
     private var isUITesting: Bool { ProcessInfo.processInfo.arguments.contains("-ui-testing") }
-    var token: String? { KeychainStore.get(account: "relayToken") }
-    var isPaired: Bool { isUITesting || (!endpoint.isEmpty && token != nil) }
+    var token: String? { savedPairing?.token }
+    var isPaired: Bool { (isUITesting && !ProcessInfo.processInfo.arguments.contains("-pairing-persistence-test")) || (!endpoint.isEmpty && token != nil) }
     var selectedModel: TranscriptionModel? { ComparisonTranscriber.catalog.first { $0.variant == selectedModelVariant && $0.variant == mode } }
 
     init() {
+        let store = PairingStore(testing: ProcessInfo.processInfo.arguments.contains("-ui-testing"))
+        pairingStore = store
+        savedPairing = store.load(legacyEndpoint: UserDefaults.standard.string(forKey: "relayEndpoint") ?? "")
         repository = try! SessionRepository(inMemory: ProcessInfo.processInfo.arguments.contains("-ui-testing"))
         sessions = repository.all()
         transcriber.onFinalSegments = { [weak self] segments in self?.append(segments) }
@@ -83,9 +91,19 @@ final class AppModel: ObservableObject {
             mode = "meta"
             assistantConfiguration = AssistantConfiguration()
             selectedModelVariant = "voz"
+            if ProcessInfo.processInfo.arguments.contains("-save-pairing-fixture") {
+                let fixture = try! PairingPayload.parse("{\"endpoint\":\"https://saved-pc.example.test:10000/\",\"token\":\"persistent-synthetic-test-token\"}")
+                try! pairingStore.save(fixture)
+                savedPairing = fixture
+            }
+            if ProcessInfo.processInfo.arguments.contains("-drop-test-keychain") {
+                pairingStore.removeTestKeychainCopy()
+                savedPairing = pairingStore.load()
+            }
             endpoint = "https://livecue.test"
             relayOnline = true
         }
+        if let savedPairing, !isUITesting || ProcessInfo.processInfo.arguments.contains("-pairing-persistence-test") { endpoint = savedPairing.endpoint }
         Task { await checkRelay() }
     }
 
@@ -93,22 +111,33 @@ final class AppModel: ObservableObject {
         var normalized = rawEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         if !normalized.hasSuffix("/") { normalized += "/" }
         do {
-            if !isUITesting {
-                let data = try JSONSerialization.data(withJSONObject: ["endpoint": normalized, "token": rawToken])
-                _ = try PairingPayload.parse(String(decoding: data, as: UTF8.self))
-            }
+            let data = try JSONSerialization.data(withJSONObject: ["endpoint": normalized, "token": rawToken])
+            let pairing = try PairingPayload.parse(String(decoding: data, as: UTF8.self))
             if !isUITesting { try await relay.verify(endpoint: normalized, token: rawToken) }
-            try KeychainStore.set(rawToken, account: "relayToken")
+            try pairingStore.save(pairing)
+            savedPairing = pairing
             endpoint = normalized
             UserDefaults.standard.set(normalized, forKey: "relayEndpoint")
             relayOnline = true
-        } catch { errorMessage = error.localizedDescription }
+            pairingRejected = false; connectionMessage = "Connected. Your pairing is saved on this iPhone."
+        } catch { errorMessage = ConnectionMessage.describe(error, saved: isPaired) }
     }
 
     func checkRelay() async {
+        guard !isCheckingRelay else { return }
+        if savedPairing == nil, let restored = pairingStore.load(legacyEndpoint: endpoint) { savedPairing = restored; endpoint = restored.endpoint }
         guard isPaired else { relayOnline = false; return }
-        if isUITesting { relayOnline = true; return }
-        relayOnline = (try? await relay.health(endpoint: endpoint, token: token)) == true
+        if isUITesting { relayOnline = true; connectionMessage = "Connected. Your pairing is saved on this iPhone."; return }
+        isCheckingRelay = true
+        defer { isCheckingRelay = false }
+        do {
+            relayOnline = try await relay.health(endpoint: endpoint, token: token)
+            pairingRejected = false; connectionMessage = "Connected. Your pairing is saved on this iPhone."
+        } catch {
+            relayOnline = false
+            if let relayError = error as? RelayError, case .unauthorized = relayError { pairingRejected = true }
+            connectionMessage = ConnectionMessage.describe(error, saved: !pairingRejected)
+        }
     }
 
     func selectAndPrepare(_ model: TranscriptionModel) async {
@@ -141,7 +170,9 @@ final class AppModel: ObservableObject {
         defer { isTransitioning = false }
         guard speechProvider.usesPC || selectedModel != nil else { errorMessage = "Choose and download a transcription model first."; return }
         if speechProvider.usesPC, !isUITesting {
-            guard isPaired, relayOnline, let token else { errorMessage = "Pair your Windows PC and start its relay first."; return }
+            guard isPaired else { errorMessage = RelayError.notPaired.localizedDescription; return }
+            if !relayOnline { await checkRelay() }
+            guard relayOnline, let token else { errorMessage = connectionMessage; return }
             transcriber.useCloud(provider: speechProvider); transcriber.cloudEndpoint = endpoint; transcriber.cloudToken = token; transcriber.cloudOffset = 0
         }
         let granted: Bool

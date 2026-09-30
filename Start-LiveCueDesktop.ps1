@@ -148,8 +148,10 @@ $ui.StartButton.Add_Click({ Start-Relay })
 $ui.StopButton.Add_Click({ Stop-Relay })
 $ui.PauseButton.Add_Click({ Send-Control @{action='pause'; paused=(-not $script:paused)} })
 $ui.ClearButton.Add_Click({ $ui.Activity.Clear(); $ui.Transcript.Clear(); $ui.Reply.Clear(); $ui.ResponseTime.Text = 'Activity cleared' })
-$ui.ShowPairButton.Add_Click({ $ui.PairingPanel.Visibility = 'Visible' })
-$ui.PairFooterButton.Add_Click({ $ui.PairingPanel.Visibility = 'Visible' })
+$ui.PairButton.Content = 'Show QR'
+$ui.QRHint.Text = 'Pair your iPhone once. Restarts and showing this QR keep existing pairings valid.'
+$ui.ShowPairButton.Add_Click({ $ui.PairingPanel.Visibility = 'Visible'; if ($script:relayProcess -and -not $script:relayProcess.HasExited) { Send-Control @{action='pair'} } })
+$ui.PairFooterButton.Add_Click({ $ui.PairingPanel.Visibility = 'Visible'; if ($script:relayProcess -and -not $script:relayProcess.HasExited) { Send-Control @{action='pair'} } })
 $ui.ClosePairButton.Add_Click({ $ui.PairingPanel.Visibility = 'Collapsed' })
 $ui.ShowActivityButton.Add_Click({ $ui.ActivityPanel.Visibility = 'Visible' })
 $ui.CloseActivityButton.Add_Click({ $ui.ActivityPanel.Visibility = 'Collapsed' })
@@ -160,7 +162,7 @@ $window.Add_KeyDown({ if ($_.Key -eq 'Escape') { $ui.PairingPanel.Visibility = '
 $ui.Status.SetBinding([Windows.FrameworkElement]::ToolTipProperty, (New-Object Windows.Data.Binding 'Text' -Property @{Source=$ui.Status})) | Out-Null
 $ui.HideQRButton.Add_Click({ $ui.QRCanvas.Children.Clear(); $script:qrShownAt = $null; $ui.QRHint.Text = 'QR hidden. Existing pairing remains valid.' })
 $ui.PairButton.Add_Click({
-    if ([Windows.MessageBox]::Show('Generate a new QR? This invalidates the previous pairing token. Re-pair your iPhone afterward.', 'Replace pairing', 'YesNo', 'Question') -eq 'Yes') { Send-Control @{action='pair'} }
+    Send-Control @{action='pair'}
 })
 $timer = New-Object Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromMilliseconds(150)

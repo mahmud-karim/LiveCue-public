@@ -1,6 +1,25 @@
 import XCTest
 
 final class LiveCueUITests: XCTestCase {
+    func testPairingSurvivesRelaunchAndMissingKeychainCopy() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-pairing-persistence-test", "-save-pairing-fixture"]
+        app.launch()
+        app.buttons["pair-pc"].tap()
+        XCTAssertTrue(app.staticTexts["saved-pc-address"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["saved-pc-address"].label, "https://saved-pc.example.test:10000/")
+        app.terminate()
+        app.launchArguments = ["-ui-testing", "-pairing-persistence-test", "-drop-test-keychain"]
+        app.launch()
+        app.buttons["pair-pc"].tap()
+        XCTAssertTrue(app.staticTexts["saved-pc-address"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["saved-pc-address"].label, "https://saved-pc.example.test:10000/")
+        XCTAssertTrue(app.buttons["reconnect-pc"].isHittable)
+        XCTAssertFalse(app.buttons["scan-pairing-qr"].exists)
+        app.buttons["reconnect-pc"].tap()
+        XCTAssertTrue(app.staticTexts["saved-pc-state"].label.contains("Connected"))
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Saved PC pairing after relaunch"; shot.lifetime = .keepAlways; add(shot)
+    }
     func testPCLocalSpeechChoicesAndZeroCostHistory() {
         let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
         for provider in ["nemotron", "qwen3"] {
@@ -94,6 +113,7 @@ final class LiveCueUITests: XCTestCase {
     func testPairingOffersQRScanner() {
         let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
         app.buttons["pair-pc"].tap()
+        if app.buttons["show-pairing-options"].exists { app.buttons["show-pairing-options"].tap() }
         XCTAssertTrue(app.buttons["scan-pairing-qr"].waitForExistence(timeout: 5))
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "QR pairing"; shot.lifetime = .keepAlways; add(shot)

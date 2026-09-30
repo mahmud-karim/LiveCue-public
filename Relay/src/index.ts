@@ -1,13 +1,13 @@
 import qrcode from "qrcode-terminal";
 import { createLiveCueServer } from "./server.ts";
-import { defaultConfigPath, loadOrCreatePairing } from "./security.ts";
+import { defaultConfigPath, loadOrCreatePairing, pairingHashes } from "./security.ts";
 
 const host = "127.0.0.1";
 const port = Number(process.env.LIVECUE_PORT || 47831);
 const reset = process.argv.includes("--reset-pairing");
 const endpoint = process.env.LIVECUE_PUBLIC_ENDPOINT || `http://${host}:${port}`;
 const { config, plaintextToken } = await loadOrCreatePairing(defaultConfigPath(), reset);
-const server = createLiveCueServer(config.tokenHash);
+const server = createLiveCueServer(pairingHashes(config));
 
 server.listen(port, host, () => {
   console.log(`LiveCue Relay ready on ${endpoint}`);
@@ -17,11 +17,10 @@ server.listen(port, host, () => {
     console.log("\nPaste this pairing payload into LiveCue:\n");
     console.log(payload);
     qrcode.generate(payload, { small: true });
-    console.log("This token is shown once. Use --reset-pairing to replace it.");
+    console.log("This pairing is saved. Restarting the relay keeps paired phones connected.");
   } else {
     console.log("Using the existing pairing token. Run npm run reset-pairing to pair a new phone.");
   }
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => server.close(() => process.exit(0)));
-

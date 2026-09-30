@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { CodexRunner } from "./codex.ts";
-import { bearerToken, verifyToken } from "./security.ts";
+import { bearerToken, verifyToken, type TokenHashes } from "./security.ts";
 import { modelCatalog, validateSelection } from "./models.ts";
 import { attachSpeech } from "./speech.ts";
 
@@ -9,7 +9,7 @@ const maxBodyBytes = 128 * 1024;
 
 export type RelayEvent = { type: string; [key: string]: unknown };
 export type RelayControls = { emit?: (event: RelayEvent) => void; accepting?: () => boolean };
-export function createLiveCueServer(tokenHash: string | (() => string), runner = new CodexRunner(), controls: RelayControls = {}) {
+export function createLiveCueServer(tokenHash: TokenHashes | (() => TokenHashes), runner = new CodexRunner(), controls: RelayControls = {}) {
   let busy = false;
   const server = createServer(async (request, response) => {
     setSecurityHeaders(response);
@@ -68,7 +68,7 @@ class HttpError extends Error {
   constructor(status: number, message: string) { super(message); this.status = status; }
 }
 
-function authenticate(request: IncomingMessage, expectedHash: string): void {
+function authenticate(request: IncomingMessage, expectedHash: TokenHashes): void {
   const token = bearerToken(request.headers.authorization);
   if (!token || !verifyToken(token, expectedHash)) throw new HttpError(401, "Invalid pairing token.");
 }

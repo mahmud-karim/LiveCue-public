@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 
-test("desktop IPC starts, produces a QR, rotates pairing, pauses and shuts down", { timeout: 15000 }, async () => {
+test("desktop IPC starts, redisplays the saved QR without revoking pairing, pauses and shuts down", { timeout: 30000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "livecue-desktop-test-"));
   const configPath = join(directory, "relay.json");
   const child = spawn(process.execPath, ["--experimental-strip-types", fileURLToPath(new URL("../src/desktop.ts", import.meta.url))], {
@@ -38,7 +38,8 @@ test("desktop IPC starts, produces a QR, rotates pairing, pauses and shuts down"
     child.stdin.write('{"action":"pair"}\n');
     await waitFor(() => events.filter(e => e.type === "pairing").length === 2);
     const after = JSON.parse(await readFile(configPath, "utf8"));
-    assert.notEqual(before.tokenHash, after.tokenHash);
+    assert.equal(before.tokenHash, after.tokenHash);
+    assert.equal(before.protectedToken, after.protectedToken);
     child.stdin.write('{"action":"pause","paused":true}\n');
     await waitFor(() => events.some(e => e.type === "state" && e.accepting === false));
     const ready = events.find(e => e.type === "ready");

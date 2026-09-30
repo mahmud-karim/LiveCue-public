@@ -1,11 +1,11 @@
 import { WebSocket, WebSocketServer } from "ws";
 import type { Server } from "node:http";
-import { bearerToken, verifyToken } from "./security.ts";
+import { bearerToken, verifyToken, type TokenHashes } from "./security.ts";
 import type { RelayControls } from "./server.ts";
 import { localSpeech, prepareLocalModel, connectLocal } from "./local-asr.ts";
 
 // Fixed destination and format: phones never choose an upstream URL or receive a provider key.
-export function attachSpeech(server: Server, tokenHash: string | (() => string), controls: RelayControls,
+export function attachSpeech(server: Server, tokenHash: TokenHashes | (() => TokenHashes), controls: RelayControls,
   connect = () => new WebSocket("wss://api.meta.ai/v1/asr/realtime", { maxPayload: 128 * 1024, handshakeTimeout: 15000 }),
   apiKey = process.env.LIVECUE_META_API_KEY,
   local = { prepare: prepareLocalModel, connect: connectLocal }) {

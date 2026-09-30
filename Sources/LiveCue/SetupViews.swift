@@ -7,9 +7,22 @@ struct PairingView: View {
     @State private var token = ""
     @State private var pairingPayload = ""
     @State private var scanning = false
+    @State private var showPairing = false
 
     var body: some View {
         Form {
+            if model.isPaired {
+                Section("Saved PC") {
+                    Label(model.relayOnline ? "Connected" : model.pairingRejected ? "Pairing needs attention" : "Reconnecting", systemImage: model.relayOnline ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
+                        .foregroundStyle(model.relayOnline ? MintTheme.mint : .orange).accessibilityIdentifier("saved-pc-state")
+                    Text(model.endpoint).font(.caption.monospaced()).textSelection(.enabled).accessibilityIdentifier("saved-pc-address")
+                    Text(model.connectionMessage.isEmpty ? "Your pairing is saved. The app reconnects automatically after restarting." : model.connectionMessage).font(.callout)
+                    Button(model.isCheckingRelay ? "Checking…" : "Reconnect") { Task { await model.checkRelay() } }
+                        .disabled(model.isCheckingRelay).accessibilityIdentifier("reconnect-pc")
+                    Button(showPairing ? "Hide pairing options" : "Pair another PC or scan a code") { showPairing.toggle() }.accessibilityIdentifier("show-pairing-options")
+                }
+            }
+            if !model.isPaired || showPairing {
             Section {
                 Button { scanning = true } label: { Label("Scan PC QR code", systemImage: "qrcode.viewfinder") }.accessibilityIdentifier("scan-pairing-qr")
                 Text("Start LiveCue Relay on Windows. Paste the pairing JSON shown by the launcher, or enter the values manually.")
@@ -22,9 +35,10 @@ struct PairingView: View {
                 Button("Verify and pair") { Task { await model.pair(endpoint: endpoint, token: token) } }.disabled(endpoint.isEmpty || token.isEmpty)
                 if model.relayOnline { Label("PC connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
             }
-            Section("Privacy") { Text("The pairing token is stored in iPhone Keychain. Meta mode sends audio through your PC to Meta. Nemotron and Qwen3 send audio to your PC only. Voz and Parakeet transcribe on this iPhone. Desktop activity stays in memory.") }
+            }
+            Section("Privacy") { Text("Your pairing is saved in iPhone Keychain and a protected file in this app, excluded from backups. Meta mode sends audio through your PC to Meta. Nemotron and Qwen3 send audio to your PC only. Voz and Parakeet transcribe on this iPhone. Desktop activity stays in memory.") }
         }
-        .navigationTitle("Pair Windows PC")
+        .navigationTitle(model.isPaired ? "PC connection" : "Pair Windows PC")
         .onAppear { endpoint = model.endpoint }
         .sheet(isPresented: $scanning) {
             NavigationStack {
