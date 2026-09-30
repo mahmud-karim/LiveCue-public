@@ -4,8 +4,14 @@ $root = $PSScriptRoot
 $container = 'livecue-asr-lab'
 $dockerCommand = Get-Command docker.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $dockerCommand) { throw 'Docker Desktop is required.' }
-docker info --format '{{.ServerVersion}}' *> $null
-if ($LASTEXITCODE -ne 0) {
+function Test-DockerEngine {
+    # Windows PowerShell 5 treats native stderr as an error record. An offline
+    # engine is expected here; inspect its exit code instead of aborting.
+    $ErrorActionPreference = 'Continue'
+    & $dockerCommand.Source info --format '{{.ServerVersion}}' *> $null
+    return ($LASTEXITCODE -eq 0)
+}
+if (-not (Test-DockerEngine)) {
     if (-not $EnsureDocker) { throw 'Start Docker Desktop first, then run this launcher again.' }
     $desktopPath = [IO.Path]::GetFullPath((Join-Path (Split-Path $dockerCommand.Source -Parent) '../../Docker Desktop.exe'))
     if (-not (Test-Path -LiteralPath $desktopPath -PathType Leaf)) { throw 'Docker Desktop executable was not found. Open it manually.' }
@@ -16,10 +22,9 @@ if ($LASTEXITCODE -ne 0) {
     $dockerDeadline = (Get-Date).AddMinutes(2)
     do {
         Start-Sleep -Seconds 2
-        docker info --format '{{.ServerVersion}}' *> $null
-        if ($LASTEXITCODE -eq 0) { break }
+        if (Test-DockerEngine) { break }
     } while ((Get-Date) -lt $dockerDeadline)
-    if ($LASTEXITCODE -ne 0) { throw 'Docker engine did not start. Check Docker Desktop on the PC.' }
+    if (-not (Test-DockerEngine)) { throw 'Docker engine did not start. Check Docker Desktop on the PC.' }
 }
 $models = Join-Path $root "private\models\$Model"
 if (-not (Test-Path -LiteralPath (Join-Path $models 'config.json'))) { throw 'Model weights have not been downloaded.' }
@@ -36,7 +41,7 @@ if ($existing -eq $container) {
     $labels = docker inspect --format '{{json .Config.Labels}}' $container | ConvertFrom-Json
     $owner = $labels.'com.livecue.component'
     if ($owner -ne 'asr-lab') { throw 'Container name belongs to another workload; refusing to replace it.' }
-    docker stop --time 15 $container | Out-Null
+    docker stop --timeout 15 $container | Out-Null
     docker rm $container | Out-Null
 }
 docker run -d --name $container --label com.livecue.component=asr-lab --gpus all --shm-size 1g --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 -e VLLM_NO_USAGE_STATS=1 -e DO_NOT_TRACK=1 -e GRADIO_ANALYTICS_ENABLED=False -p 127.0.0.1:8765:8765 --mount "type=bind,source=$models,target=/models,readonly" --mount "type=bind,source=$root,target=/app,readonly" "livecue-asr-${Model}:0.1" | Out-Null
