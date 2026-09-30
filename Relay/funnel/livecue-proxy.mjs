@@ -23,8 +23,8 @@ export function createLiveCueProxy({port = 47831} = {}) {
     request(req, res) {
       if (!claimed(req)) return false;
       if (!nativeBearer(req)) { reply(res, 401); return true; }
-      const allowed = (req.method === 'GET' && ['/v1/health', '/v1/models'].includes(req.url)) ||
-        (req.method === 'POST' && ['/v1/pair/verify', '/v1/assist', '/v1/session-summary'].includes(req.url)) ||
+      const allowed = (req.method === 'GET' && ['/v1/health', '/v1/models', '/v1/local-model'].includes(req.url)) ||
+        (req.method === 'POST' && ['/v1/pair/verify', '/v1/assist', '/v1/session-summary', '/v1/local-model/start', '/v1/local-model/stop'].includes(req.url)) ||
         (req.method === 'DELETE' && /^\/v1\/requests\/[A-Za-z0-9_-]{1,80}$/.test(req.url));
       if (!allowed) { reply(res, 404); return true; }
       if (Number(req.headers['content-length'] || 0) > 128 * 1024) { reply(res, 413); return true; }

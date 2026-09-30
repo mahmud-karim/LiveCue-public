@@ -1,6 +1,37 @@
 import XCTest
 
 final class LiveCueUITests: XCTestCase {
+    func testPCModelStartStopInSettings() {
+        let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertFalse(app.buttons["start-pc-model"].exists)
+        for provider in ["nemotron", "qwen3"] {
+            app.buttons["speech-provider"].tap(); app.buttons["provider-" + provider].tap()
+            XCTAssertTrue(app.buttons["start-pc-model"].waitForExistence(timeout: 5))
+            app.buttons["start-pc-model"].tap()
+            let ready = NSPredicate(format: "label == %@", "Ready")
+            expectation(for: ready, evaluatedWith: app.staticTexts["pc-model-state"])
+            waitForExpectations(timeout: 5)
+            XCTAssertFalse(app.buttons["start-pc-model"].isEnabled)
+            XCTAssertTrue(app.buttons["stop-pc-model"].isEnabled)
+            let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = provider + " PC model ready with Start Stop"; shot.lifetime = .keepAlways; add(shot)
+            app.buttons["stop-pc-model"].tap()
+            expectation(for: NSPredicate(format: "label == %@", "Stopped"), evaluatedWith: app.staticTexts["pc-model-state"])
+            waitForExpectations(timeout: 5)
+            XCTAssertTrue(app.buttons["start-pc-model"].isEnabled)
+            XCTAssertFalse(app.buttons["stop-pc-model"].isEnabled)
+        }
+    }
+    func testPCModelStartupErrorAllowsRetry() {
+        let app = XCUIApplication(); app.launchArguments = ["-ui-testing", "-pc-model-start-error"]; app.launch()
+        app.tabBars.buttons["Settings"].tap(); app.buttons["speech-provider"].tap(); app.buttons["provider-nemotron"].tap()
+        app.buttons["start-pc-model"].tap()
+        expectation(for: NSPredicate(format: "label == %@", "Error"), evaluatedWith: app.staticTexts["pc-model-state"])
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.staticTexts["pc-model-message"].label.contains("Docker Desktop"))
+        XCTAssertTrue(app.buttons["start-pc-model"].isEnabled)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "PC startup failure retry"; shot.lifetime = .keepAlways; add(shot)
+    }
     func testPairingSurvivesRelaunchAndMissingKeychainCopy() {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-pairing-persistence-test", "-save-pairing-fixture"]

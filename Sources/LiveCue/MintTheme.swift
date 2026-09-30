@@ -20,7 +20,7 @@ struct SettingsView: View {
             Section("Transcription & AI") {
                 NavigationLink { SpeechProviderView() } label: {
                     LabeledContent("Transcription", value: model.speechProvider.name)
-                }.disabled(model.activeSession != nil || model.isPreparing).accessibilityIdentifier("speech-provider")
+                }.disabled(model.activeSession != nil || model.isPreparing || model.isControllingPCModel || model.pcModelStatus?.isChanging == true).accessibilityIdentifier("speech-provider")
                 if !model.speechProvider.usesPC {
                     NavigationLink("Model Library") { ModelLibraryView() }
                     NavigationLink("Speech benchmark") { ModelLabView() }
@@ -28,6 +28,7 @@ struct SettingsView: View {
                 NavigationLink { AssistantLabView() } label: { Label("Assistant models & timing", systemImage: "slider.horizontal.3") }.accessibilityIdentifier("assistant-lab")
                 Text(model.mode == "meta" ? "Audio streams through your PC to Meta. No model download. Cloud usage is billed by Meta. Recording stops if the connection fails; resume to reconnect." : model.speechProvider.isPCLocal ? "Audio streams to the model on your PC's GPU. No speech API charges. Keep Docker Desktop and LiveCue Desktop running. Switching models may take a minute; recording starts only when ready." : "Audio is transcribed on this iPhone. Only text is sent to your PC.").font(.system(size: 13)).foregroundStyle(.secondary)
             }
+            if model.speechProvider.isPCLocal { PCModelControls() }
             Section("Assistant instructions") {
                 TextField("Optional instruction (e.g. answer briefly)", text: $model.instruction, axis: .vertical)
                     .lineLimit(2...5).accessibilityIdentifier("assistant-instruction")
@@ -58,6 +59,41 @@ struct SettingsView: View {
                     Button("Done") { editingInstruction = false }.accessibilityIdentifier("finish-instruction")
                 }
             }
+    }
+}
+
+private struct PCModelControls: View {
+    @EnvironmentObject private var model: AppModel
+    private var changing: Bool { model.isControllingPCModel || model.pcModelStatus?.isChanging == true }
+    private var locked: Bool { changing || model.activeSession != nil || model.pcModelStatus?.busy == true || !model.isPaired }
+    var body: some View {
+        Section("PC model controls") {
+            HStack {
+                if changing { ProgressView().tint(MintTheme.mint) }
+                Text(model.pcModelStatus?.state.capitalized ?? "Unavailable").foregroundStyle(model.pcModelReady ? MintTheme.mint : .secondary)
+                    .accessibilityIdentifier("pc-model-state")
+                Spacer()
+                if let status = model.pcModelStatus, status.isChanging { Text("\(status.elapsedSeconds) s").monospacedDigit() }
+            }
+            if let loaded = model.pcModelStatus?.model, loaded != model.mode {
+                Text("Currently loaded: \(loaded). Start switches to your selected model when it is idle.").font(.caption).foregroundStyle(.secondary)
+            }
+            Text(model.pcModelMessage).font(.callout).foregroundStyle(.secondary).accessibilityIdentifier("pc-model-message")
+            HStack(spacing: 16) {
+                Button { Task { await model.controlPCModel(start: true) } } label: { Label("Start model", systemImage: "play.fill") }
+                    .buttonStyle(.borderedProminent).disabled(locked || model.pcModelReady).accessibilityIdentifier("start-pc-model")
+                Button { Task { await model.controlPCModel(start: false) } } label: { Label("Stop model", systemImage: "stop.fill") }
+                    .buttonStyle(.bordered).disabled(locked || model.pcModelStatus == nil || model.pcModelStatus?.state == "stopped" || model.pcModelStatus?.model != model.mode).accessibilityIdentifier("stop-pc-model")
+            }
+            Button("Refresh status") { Task { await model.refreshPCModel() } }.accessibilityIdentifier("refresh-pc-model")
+            Text(model.activeSession != nil ? "End the conversation before starting or unloading a model." : "Start opens Docker Desktop if needed. Stop unloads only LiveCue’s speech model; weights stay installed and Docker remains open. One PC model runs at a time.").font(.caption).foregroundStyle(.secondary)
+        }
+        .task(id: model.mode) {
+            while !Task.isCancelled {
+                await model.refreshPCModel()
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            }
+        }
     }
 }
 

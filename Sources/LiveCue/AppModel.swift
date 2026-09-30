@@ -39,6 +39,49 @@ final class AppModel: ObservableObject {
     @Published var assistantModels: [AssistantModelOption] = []
     @Published var modelCatalogMessage = ""
     @Published var isLoadingModels = false
+    @Published private(set) var pcModelStatus: PCModelStatus?
+    @Published private(set) var pcModelMessage = "Checking PC model…"
+    @Published private(set) var isControllingPCModel = false
+    private var isRefreshingPCModel = false
+    var pcModelReady: Bool { pcModelStatus?.isReady(for: mode) == true }
+    func refreshPCModel() async {
+        guard speechProvider.isPCLocal, !isRefreshingPCModel, !isControllingPCModel else { return }
+        isRefreshingPCModel = true
+        defer { isRefreshingPCModel = false }
+        if isUITesting {
+            if pcModelStatus == nil { pcModelStatus = PCModelStatus(state: "stopped", message: "PC model is stopped.") }
+            pcModelMessage = pcModelStatus?.message ?? ""; return
+        }
+        guard let token, isPaired else { pcModelStatus = nil; pcModelMessage = "Pair your PC first."; return }
+        do {
+            pcModelStatus = try await relay.pcModelStatus(endpoint: endpoint, token: token)
+            pcModelMessage = pcModelStatus?.message ?? ""
+        } catch {
+            pcModelStatus = nil
+            pcModelMessage = "Could not check the PC model. Keep the updated LiveCue Desktop running. " + ConnectionMessage.describe(error, saved: isPaired)
+        }
+    }
+    func controlPCModel(start: Bool) async {
+        guard speechProvider.isPCLocal, !isControllingPCModel, activeSession == nil, pcModelStatus?.isChanging != true else { return }
+        isControllingPCModel = true
+        defer { isControllingPCModel = false }
+        if isUITesting {
+            pcModelStatus = PCModelStatus(state: start ? "starting" : "stopping", model: mode, message: start ? "Starting Docker and loading the PC model…" : "Unloading the PC model…")
+            pcModelMessage = pcModelStatus!.message
+            try? await Task.sleep(for: .seconds(1))
+            if start && ProcessInfo.processInfo.arguments.contains("-pc-model-start-error") {
+                pcModelStatus = PCModelStatus(state: "error", model: mode, message: "Could not load the PC model. Check Docker Desktop and retry.")
+            } else {
+                pcModelStatus = PCModelStatus(state: start ? "ready" : "stopped", model: start ? mode : nil, message: start ? "PC model is ready." : "PC model stopped. GPU memory released.")
+            }
+            pcModelMessage = pcModelStatus!.message; return
+        }
+        guard let token, isPaired else { pcModelMessage = "Pair your PC first."; return }
+        do {
+            pcModelStatus = try await relay.controlPCModel(start: start, model: mode, endpoint: endpoint, token: token)
+            pcModelMessage = pcModelStatus?.message ?? ""
+        } catch { pcModelMessage = ConnectionMessage.describe(error, saved: isPaired) }
+    }
     @Published private(set) var lastAssistRequest: AssistRequest?
     var comparisonTurns: [AssistantTurn] {
         ((activeSession?.assistantTurns ?? []) + sessions.filter { $0.id != activeSession?.id }.flatMap(\.assistantTurns))
@@ -133,6 +176,7 @@ final class AppModel: ObservableObject {
         do {
             relayOnline = try await relay.health(endpoint: endpoint, token: token)
             pairingRejected = false; connectionMessage = "Connected. Your pairing is saved on this iPhone."
+            if speechProvider.isPCLocal { await refreshPCModel() }
         } catch {
             relayOnline = false
             if let relayError = error as? RelayError, case .unauthorized = relayError { pairingRejected = true }

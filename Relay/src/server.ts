@@ -4,13 +4,17 @@ import { CodexRunner } from "./codex.ts";
 import { bearerToken, verifyToken, type TokenHashes } from "./security.ts";
 import { modelCatalog, validateSelection } from "./models.ts";
 import { attachSpeech } from "./speech.ts";
+import { LocalModelController, installedRuntime, localModel, ModelControlError } from "./local-model.ts";
+import { connectLocal } from "./local-asr.ts";
 
 const maxBodyBytes = 128 * 1024;
 
 export type RelayEvent = { type: string; [key: string]: unknown };
 export type RelayControls = { emit?: (event: RelayEvent) => void; accepting?: () => boolean };
-export function createLiveCueServer(tokenHash: TokenHashes | (() => TokenHashes), runner = new CodexRunner(), controls: RelayControls = {}) {
+export function createLiveCueServer(tokenHash: TokenHashes | (() => TokenHashes), runner = new CodexRunner(), controls: RelayControls = {},
+  models = new LocalModelController(installedRuntime, status => controls.emit?.({ type: "speech-status", message: status.message })), connect = connectLocal) {
   let busy = false;
+  let speechActive = () => false;
   const server = createServer(async (request, response) => {
     setSecurityHeaders(response);
     let trackedId: string | undefined;
@@ -24,6 +28,19 @@ export function createLiveCueServer(tokenHash: TokenHashes | (() => TokenHashes)
       }
       if (request.method === "POST" && request.url === "/v1/pair/verify") return json(response, 200, { ok: true });
       if (request.method === "GET" && request.url === "/v1/models") return json(response, 200, { models: await modelCatalog() });
+      if (request.method === "GET" && request.url === "/v1/local-model") {
+        const status = await models.status();
+        return json(response, 200, { ...status, busy: status.busy || speechActive() });
+      }
+      if (request.method === "POST" && ["/v1/local-model/start", "/v1/local-model/stop"].includes(request.url || "")) {
+        if (request.headers.origin || request.headers["sec-fetch-site"]) throw new HttpError(403, "Native app control only.");
+        if (controls.accepting?.() === false) throw new HttpError(503, "Resume the PC relay before controlling models.");
+        const model = localModel((await readJson(request)).model);
+        const status = await models.status();
+        if (speechActive() || status.busy) throw new HttpError(409, "Stop the active conversation or lab test before controlling the PC model.");
+        if (request.url === "/v1/local-model/stop" && status.model && status.model !== model) throw new HttpError(409, "A different PC model is loaded. Select it before stopping.");
+        return json(response, 202, request.url === "/v1/local-model/start" ? models.start(model) : models.stop(model));
+      }
       if (request.method === "POST" && (request.url === "/v1/assist" || request.url === "/v1/session-summary")) {
         if (controls.accepting?.() === false) throw new HttpError(503, "PC relay is paused. Resume it in LiveCue Desktop.");
         if (busy) throw new HttpError(429, "The PC is processing another request. Try again shortly.");
@@ -54,12 +71,13 @@ export function createLiveCueServer(tokenHash: TokenHashes | (() => TokenHashes)
       if (request.method === "DELETE" && match) return json(response, runner.cancel(decodeURIComponent(match[1])) ? 200 : 404, { ok: true });
       json(response, 404, { error: "Endpoint not found." });
     } catch (error: unknown) {
-      const status = error instanceof HttpError ? error.status : 500;
+      const status = error instanceof HttpError || error instanceof ModelControlError ? error.status : 500;
       if (trackedId) controls.emit?.({ type: "request-error", requestId: trackedId, message: "Assistant request failed or timed out. Check Codex sign-in and retry." });
       json(response, status, { error: status === 500 ? "The local assistant request failed." : (error as Error).message });
     }
   });
-  attachSpeech(server, tokenHash, controls);
+  speechActive = attachSpeech(server, tokenHash, controls, undefined, undefined,
+    { prepare: model => models.prepare(model), connect }, () => models.changing);
   return server;
 }
 

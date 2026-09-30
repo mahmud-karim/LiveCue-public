@@ -1,30 +1,9 @@
-import { execFile } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { WebSocket } from "ws";
 import type { RelayControls } from "./server.ts";
+import { localModels, type LocalModel } from "./local-model.ts";
+export type { LocalModel } from "./local-model.ts";
 
-export type LocalModel = "nemotron" | "qwen3";
-let preparation: Promise<void> | undefined;
-export async function prepareLocalModel(model: LocalModel) {
-  if (!["nemotron", "qwen3"].includes(model)) throw Error("Unsupported model");
-  // A disconnect does not kill Docker mid-start; the next connection awaits that start.
-  if (preparation) await preparation;
-  try {
-    const health = await (await fetch("http://127.0.0.1:8765/health", { signal: AbortSignal.timeout(1500) })).json() as any;
-    if (health.busy) throw Error("busy");
-    if (health.ready && health.model === model && health.relayProtocol === 1) return;
-  } catch (error) { if ((error as Error).message === "busy") throw error; }
-  const script = fileURLToPath(new URL("../../../LiveCue-ASR/Start-ASR-Lab.ps1", import.meta.url));
-  // Do not give the model launcher the relay's API keys, tokens, or Codex environment.
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
-    ["systemroot", "windir", "path", "pathext", "temp", "tmp", "userprofile", "appdata", "localappdata", "programdata", "programfiles", "programfiles(x86)", "comspec"].includes(key.toLowerCase())));
-  const task = new Promise<void>((resolve, reject) => {
-    execFile("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Model", model, "-NoBrowser"],
-      { windowsHide: true, timeout: 165000, maxBuffer: 512 * 1024, env }, error => error ? reject(Error("Local model startup failed")) : resolve());
-  });
-  preparation = task;
-  try { await task; } finally { if (preparation === task) preparation = undefined; }
-}
+export const prepareLocalModel = (model: LocalModel) => localModels.prepare(model);
 
 export const connectLocal = () => new WebSocket("ws://127.0.0.1:8765/relay", { maxPayload: 128 * 1024, handshakeTimeout: 5000 });
 
@@ -50,7 +29,7 @@ export function localSpeech(phone: WebSocket, model: LocalModel, authorized: () 
   const watchdog = setInterval(() => {
     const now = performance.now();
     if (!authorized() || controls.accepting?.() === false) return finish("PC relay paused or pairing changed.");
-    if (!ready) { if (now - started > 170000) finish("Model startup timed out. Check Docker Desktop, then retry."); else loading(); }
+    if (!ready) { if (now - started > 170000) finish("Model is still loading. Open Settings and wait for PC model status to become Ready, then retry."); else loading(); }
     else if (ending && now - endedAt > 12000) finish("Local model did not finalize in time. Some final words may be missing.");
     else if (!ending && now - lastAudio > 20000) finish("Audio stream timed out. Resume to reconnect.");
     else if (now - readyAt > 30 * 60000) finish("30-minute session limit reached. Pause and resume to continue.");

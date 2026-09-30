@@ -1,5 +1,9 @@
 # LiveCue
 
+### 0.5.4: phone controls for PC speech models
+
+Select Nemotron or Qwen3 in Settings to start/stop its PC GPU service, see loading time and readiness, and retry startup failures. Start launches verified Docker Desktop if needed. Stop unloads only LiveCue's idle model; images and weights stay installed. Model operations require saved pairing and refuse to interrupt active transcription. Update both the relay and Funnel proxy along with the IPA.
+
 ## 0.5.3 — persistent PC pairing
 
 Pair once. The iPhone saves the address and credential together in Keychain and an app-container file protected until first unlock and excluded from backups. Existing Keychain pairings migrate automatically. LiveContainer updates should replace the app in its existing data container to preserve settings and history.

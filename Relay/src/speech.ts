@@ -3,12 +3,13 @@ import type { Server } from "node:http";
 import { bearerToken, verifyToken, type TokenHashes } from "./security.ts";
 import type { RelayControls } from "./server.ts";
 import { localSpeech, prepareLocalModel, connectLocal } from "./local-asr.ts";
+import { localModels } from "./local-model.ts";
 
 // Fixed destination and format: phones never choose an upstream URL or receive a provider key.
 export function attachSpeech(server: Server, tokenHash: TokenHashes | (() => TokenHashes), controls: RelayControls,
   connect = () => new WebSocket("wss://api.meta.ai/v1/asr/realtime", { maxPayload: 128 * 1024, handshakeTimeout: 15000 }),
   apiKey = process.env.LIVECUE_META_API_KEY,
-  local = { prepare: prepareLocalModel, connect: connectLocal }) {
+  local = { prepare: prepareLocalModel, connect: connectLocal }, changing = () => localModels.changing) {
   const hub = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024, perMessageDeflate: false });
   let active = false;
   const hash = () => typeof tokenHash === "function" ? tokenHash() : tokenHash;
@@ -22,6 +23,7 @@ export function attachSpeech(server: Server, tokenHash: TokenHashes | (() => Tok
     if (!["meta", "nemotron", "qwen3"].includes(provider as string)) return reject(400);
     if ((provider === "meta" && !apiKey) || controls.accepting?.() === false) return reject(503);
     if (active) return reject(429);
+    if (provider !== "meta" && changing()) return reject(503);
     hub.handleUpgrade(request, socket, head, phone => {
       active = true;
       if (provider === "nemotron" || provider === "qwen3") {
@@ -89,4 +91,5 @@ export function attachSpeech(server: Server, tokenHash: TokenHashes | (() => Tok
     });
   });
   server.on("close", () => { for (const client of hub.clients) client.terminate(); hub.close(); });
+  return () => active;
 }

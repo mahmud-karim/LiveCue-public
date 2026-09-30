@@ -28,6 +28,13 @@ actor RelayClient {
         return true
     }
 
+    func pcModelStatus(endpoint: String, token: String) async throws -> PCModelStatus {
+        try await request(path: "/v1/local-model", method: "GET", endpoint: endpoint, token: token, body: Optional<String>.none, timeout: 8)
+    }
+    func controlPCModel(start: Bool, model: String, endpoint: String, token: String) async throws -> PCModelStatus {
+        try await request(path: start ? "/v1/local-model/start" : "/v1/local-model/stop", method: "POST", endpoint: endpoint, token: token, body: ["model": model], timeout: 10)
+    }
+
     func verify(endpoint: String, token: String) async throws {
         let _: HealthResponse = try await request(path: "/v1/pair/verify", method: "POST", endpoint: endpoint, token: token, body: ["device": "LiveCue iPhone"])
     }

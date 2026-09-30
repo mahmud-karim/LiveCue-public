@@ -62,7 +62,7 @@ struct HomeView: View {
                 HStack {
                     Label("System readiness", systemImage: "checklist").font(.system(size: 16, weight: .semibold))
                     Spacer()
-                    Text(model.relayOnline && (model.speechProvider.usesPC || model.selectedModel != nil) ? "✓ Ready" : "Setup")
+                    Text(model.relayOnline && (model.speechProvider.isPCLocal ? model.pcModelReady : model.speechProvider.usesPC || model.selectedModel != nil) ? "✓ Ready" : "Setup")
                         .font(.system(size: 12, weight: .medium)).foregroundStyle(MintTheme.mint)
                 }
                 HStack {
