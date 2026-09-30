@@ -62,10 +62,11 @@ final class AppModel: ObservableObject {
         let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty, !key.contains(where: { $0.isWhitespace || $0.isNewline }) else { openRouterKeyMessage = "Enter a valid API key."; return false }
         do { try KeychainStore.set(key, account: openRouterKeyAccount); hasOpenRouterKey = true; openRouterKeyMessage = "Key saved securely on this iPhone."; return true }
-        catch { openRouterKeyMessage = "Could not save the key in Keychain. Try again."; return false }
+        catch { openRouterKeyMessage = "Could not save the key in Keychain (status \((error as NSError).code)). No insecure fallback was used."; return false }
     }
     func removeOpenRouterKey() {
-        KeychainStore.remove(account: openRouterKeyAccount); hasOpenRouterKey = false; openRouterKeyMessage = "Key removed."
+        do { try KeychainStore.delete(account: openRouterKeyAccount); hasOpenRouterKey = false; openRouterKeyMessage = "Key removed." }
+        catch { openRouterKeyMessage = "Keychain could not remove this key (status \((error as NSError).code)). Try again." }
     }
     func verifyOpenRouterKey() async {
         guard !isVerifyingOpenRouterKey else { return }
@@ -77,6 +78,8 @@ final class AppModel: ObservableObject {
     @Published var assistantModels: [AssistantModelOption] = []
     @Published var modelCatalogMessage = ""
     @Published var isLoadingModels = false
+    private var catalogLoadingProvider: AssistantProvider?
+    private var catalogRequestId = UUID()
     @Published private(set) var pcModelStatus: PCModelStatus?
     @Published private(set) var pcModelMessage = "Checking PC model…"
     @Published private(set) var isControllingPCModel = false
@@ -132,19 +135,22 @@ final class AppModel: ObservableObject {
             .filter { $0.performance != nil }.sorted { $0.createdAt > $1.createdAt }
     }
     func refreshAssistantModels() async {
-        guard !isLoadingModels else { return }
-        isLoadingModels = true
-        defer { isLoadingModels = false }
         let provider = assistantConfiguration.provider
+        guard !isLoadingModels || catalogLoadingProvider != provider else { return }
+        let requestId = UUID(); catalogRequestId = requestId; catalogLoadingProvider = provider
+        isLoadingModels = true
+        defer { if catalogRequestId == requestId { isLoadingModels = false; catalogLoadingProvider = nil } }
         if provider == .openrouter {
             do {
                 let options = isUITesting ? [AssistantModelOption(id: "test/direct", name: "Direct test model", reasoningEfforts: ["default"])] : try await openRouter.models()
-                guard assistantConfiguration.provider == provider else { return }
+                guard catalogRequestId == requestId, assistantConfiguration.provider == provider else { return }
                 assistantModels = options; modelCatalogMessage = "Direct from OpenRouter. Choose a model; API charges are separate from your Codex subscription."
-            } catch { modelCatalogMessage = error.localizedDescription }
+            } catch { if catalogRequestId == requestId, assistantConfiguration.provider == provider { modelCatalogMessage = error.localizedDescription } }
             return
         }
         if isUITesting {
+            if ProcessInfo.processInfo.arguments.contains("-pc-catalog-slow") { try? await Task.sleep(for: .seconds(8)) }
+            guard catalogRequestId == requestId, assistantConfiguration.provider == provider else { return }
             assistantModels = [
                 .init(id: "gpt-6-astra", name: "GPT-6 Astra", reasoningEfforts: ["low", "medium", "high"]),
                 .init(id: "gpt-6-luna", name: "GPT-6 Luna", reasoningEfforts: ["low", "medium", "high"]),
@@ -156,10 +162,10 @@ final class AppModel: ObservableObject {
         guard let token, isPaired else { modelCatalogMessage = "Pair your PC first."; return }
         do {
             let options = try await relay.models(endpoint: endpoint, token: token)
-            guard assistantConfiguration.provider == provider else { return }
+            guard catalogRequestId == requestId, assistantConfiguration.provider == provider else { return }
             assistantModels = options
             modelCatalogMessage = "From this PC's Codex catalog. Access still depends on your subscription."
-        } catch { modelCatalogMessage = "Could not load models. Restart the updated PC app and check the connection. " + error.localizedDescription }
+        } catch { if catalogRequestId == requestId, assistantConfiguration.provider == provider { modelCatalogMessage = "Could not load models. Restart the updated PC app and check the connection. " + error.localizedDescription } }
     }
     private var transcriberObservation: AnyCancellable?
     let transcriber = ComparisonTranscriber()

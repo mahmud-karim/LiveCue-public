@@ -3,7 +3,7 @@ import XCTest
 final class LiveCueUITests: XCTestCase {
     func testDirectOpenRouterKeyPersistenceAndThreeAssistsWithoutPC() {
         let app = XCUIApplication()
-        app.launchArguments = ["-ui-testing", "-openrouter-ui-reset", "-on-device-ready", "-pc-offline"]
+        app.launchArguments = ["-ui-testing", "-openrouter-ui-reset", "-on-device-ready", "-pc-offline", "-pc-catalog-slow"]
         app.launch(); app.buttons["assistant-lab"].tap()
         app.buttons["assistant-provider"].tap()
         app.buttons["assistant-provider-openrouter"].tap()
