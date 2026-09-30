@@ -127,7 +127,7 @@ function Start-Relay {
             if ($LASTEXITCODE -ne 0) { throw 'Tailscale HTTPS setup failed. Check that Tailscale is connected.' }
         }
         $info = New-Object Diagnostics.ProcessStartInfo
-        $info.FileName = (Get-Command node -CommandType Application).Source
+        $info.FileName = (Get-Command node -CommandType Application | Select-Object -First 1).Source
         $info.Arguments = '--experimental-strip-types "' + (Join-Path $PSScriptRoot 'Relay\src\desktop.ts') + '"'
         $info.WorkingDirectory = Join-Path $PSScriptRoot 'Relay'
         $info.UseShellExecute = $false; $info.CreateNoWindow = $true

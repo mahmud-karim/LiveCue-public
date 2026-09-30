@@ -21,7 +21,7 @@ internal static class DesktopLauncher {
                 runspace.Open();
                 using (var shell = PowerShell.Create()) {
                     shell.Runspace = runspace;
-                    shell.AddCommand(script).Invoke();
+                    shell.AddCommand(script).AddParameter("AutoStart", true).Invoke();
                     if (shell.HadErrors) MessageBox.Show("LiveCue could not finish startup. Run the diagnostic PowerShell launcher for details.", "LiveCue Desktop");
                 }
             }

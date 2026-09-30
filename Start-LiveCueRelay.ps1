@@ -12,7 +12,7 @@ if (-not (Test-Path -LiteralPath $tailscale)) { throw 'Tailscale is not installe
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'Node.js 24 or newer is required.' }
 if (-not (Test-Path -LiteralPath (Join-Path $relayRoot 'node_modules'))) { throw 'Relay dependencies are missing. Run npm install once inside the Relay folder.' }
 
-$codexCommand = Get-Command codex -CommandType Application -ErrorAction SilentlyContinue
+$codexCommand = Get-Command codex -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 $codexExecutable = if ($codexCommand) { $codexCommand.Source } else { $null }
 if (-not $codexExecutable) {
     $codexInstallRoot = Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin'
