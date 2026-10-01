@@ -8,6 +8,7 @@ final class CloudTranscriber {
     var onFinal: (([TranscriptSegment]) -> Void)?
     var onError: ((String) -> Void)?
     private var socket: URLSessionWebSocketTask?
+    private var networkSession: URLSession?
     private var engine: AVAudioEngine?
     private var receiver: Task<Void, Never>?
     private var sender: Task<Void, Never>?
@@ -30,36 +31,74 @@ final class CloudTranscriber {
     private var stopStarted: Double?
     func resetUsage(provider: String) { stop(); usage = TranscriptionUsage(provider: provider) }
 
-    func start(endpoint: String, token: String, offset: Double, provider: SpeechProvider) async throws {
+    /// Authenticate without capturing/sending audio. This is explicit user action only.
+    static func verifyMetaKey(_ key: String) async throws {
+        let handshake = try MetaRealtimeAPI.handshake(key: key)
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieStorage = nil; config.httpShouldSetCookies = false; config.urlCache = nil
+        let session = URLSession(configuration: config, delegate: SpeechRedirectBlocker(), delegateQueue: nil)
+        let ws = session.webSocketTask(with: MetaRealtimeAPI.endpoint)
+        ws.maximumMessageSize = 128 * 1024
+        let timeout = Task { try? await Task.sleep(for: .seconds(15)); if !Task.isCancelled { ws.cancel(with: .goingAway, reason: nil) } }
+        defer { timeout.cancel(); ws.cancel(with: .normalClosure, reason: nil); session.invalidateAndCancel() }
+        ws.resume()
+        do {
+            try await ws.send(.string(handshake))
+            let message = try await ws.receive()
+            let data: Data
+            switch message { case .string(let text): data = Data(text.utf8); case .data(let bytes): data = bytes; @unknown default: throw MetaSpeechError.authentication }
+            guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw MetaSpeechError.authentication }
+            try MetaRealtimeAPI.acknowledge(value)
+            try await ws.send(.string("{\"type\":\"endStream\"}"))
+        } catch { throw error as? MetaSpeechError ?? MetaSpeechError.connection }
+    }
+
+    func start(endpoint: String, token: String, offset: Double, provider: SpeechProvider, metaKey: String? = nil) async throws {
         stop(); generation = UUID(); let id = generation
         sampleRate = provider.sampleRate; stopStarted = nil
-        guard var url = URLComponents(string: endpoint), url.scheme == "https", url.host != nil else { throw failure("Pair your PC first.") }
-        url.scheme = "wss"; url.path = "/v1/speech"; url.query = nil; url.fragment = nil
-        guard let address = url.url else { throw failure("Invalid PC address.") }
-        var request = URLRequest(url: address, timeoutInterval: 180)
-        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-        request.setValue(provider.rawValue, forHTTPHeaderField: "X-LiveCue-Speech-Model")
-        let ws = URLSession.shared.webSocketTask(with: request); socket = ws
+        let direct = provider.isCloud
+        let handshake = direct ? try MetaRealtimeAPI.handshake(key: metaKey ?? "") : nil
+        var request: URLRequest
+        if direct {
+            request = URLRequest(url: MetaRealtimeAPI.endpoint, timeoutInterval: 30)
+        } else {
+            guard provider.isPCLocal, var url = URLComponents(string: endpoint), url.scheme == "https", url.host != nil else { throw failure("Pair your PC first.") }
+            url.scheme = "wss"; url.path = "/v1/speech"; url.query = nil; url.fragment = nil
+            guard let address = url.url else { throw failure("Invalid PC address.") }
+            request = URLRequest(url: address, timeoutInterval: 180)
+            request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+            request.setValue(provider.rawValue, forHTTPHeaderField: "X-LiveCue-Speech-Model")
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieStorage = nil; config.httpShouldSetCookies = false; config.urlCache = nil
+        let network = URLSession(configuration: config, delegate: SpeechRedirectBlocker(), delegateQueue: nil)
+        networkSession = network
+        let ws = network.webSocketTask(with: request); socket = ws
         ws.maximumMessageSize = 128 * 1024
         transcript = CloudTranscript(); partial = ""; energy = 0; timing = "Connecting to \(provider.name)…"
         ending = false; finished = false; firstPartial = false; sentBytes = 0; self.offset = offset
         onUpdate?(partial, energy, timing); ws.resume()
         // Explicit timeout cancels receive as well as the handshake; no microphone starts until ready.
-        let timeout = Task { try? await Task.sleep(for: .seconds(180)); if !Task.isCancelled { ws.cancel(with: .goingAway, reason: nil) } }
+        let connectStarted = ProcessInfo.processInfo.systemUptime
+        let timeout = Task { try? await Task.sleep(for: .seconds(direct ? 30 : 180)); if !Task.isCancelled { ws.cancel(with: .goingAway, reason: nil) } }
         defer { timeout.cancel() }
         do {
+            if let handshake { try await ws.send(.string(handshake)) }
             var hello = try decode(try await ws.receive())
-            while hello["type"] as? String == "loading" {
+            while !direct, hello["type"] as? String == "loading" {
                 timing = hello["message"] as? String ?? "Loading model on PC…"
                 onUpdate?(partial, energy, timing)
                 hello = try decode(try await ws.receive())
             }
+            if direct { try MetaRealtimeAPI.acknowledge(hello) }
+            else {
             guard hello["type"] as? String == "ready" else { throw failure(hello["message"] as? String ?? "PC transcription is not ready.") }
             // Never fall back silently to a paid provider if a gateway drops the selection.
             guard hello["provider"] as? String == provider.rawValue,
                   hello["sampleRate"] as? Int == sampleRate else { throw failure("PC did not confirm the selected speech model. Update/restart LiveCue Desktop and its tunnel.") }
+            }
             timeout.cancel()
-            timing = String(format: "Connected · %.1f s setup", (hello["handshakeMs"] as? Double ?? 0) / 1000)
+            timing = String(format: direct ? "Meta direct · %.2f s setup" : "Connected · %.2f s setup", ProcessInfo.processInfo.systemUptime - connectStarted)
             started = ProcessInfo.processInfo.systemUptime
             usageID = id; usage.begin(id)
             try capture(ws: ws, id: id)
@@ -67,7 +106,8 @@ final class CloudTranscriber {
                 guard let self else { return }
                 do {
                     while !Task.isCancelled, self.generation == id {
-                        let event = try self.decode(try await ws.receive())
+                        let raw = try self.decode(try await ws.receive())
+                        let event = direct ? try MetaRealtimeAPI.event(raw, key: metaKey ?? "") : raw
                         guard self.generation == id else { return }
                         if let message = event["message"] as? String, event["type"] as? String == "error" { throw self.failure(message) }
                         let type = event["type"] as? String ?? ""
@@ -99,11 +139,11 @@ final class CloudTranscriber {
                     }
                     self.usage.finish(id, completed: self.ending && ws.closeCode == .normalClosure)
                     if !self.ending || ws.closeCode != .normalClosure {
-                        self.fail(error.localizedDescription)
+                        self.fail(direct ? (error as? MetaSpeechError ?? .connection).localizedDescription : error.localizedDescription)
                     }
                 }
             }
-        } catch { stop(); throw failure("Transcription could not start. " + error.localizedDescription) }
+        } catch { stop(); throw failure("Transcription could not start. " + (direct ? (error as? MetaSpeechError ?? .connection).localizedDescription : error.localizedDescription)) }
     }
 
     private func capture(ws: URLSessionWebSocketTask, id: UUID) throws {
@@ -186,6 +226,7 @@ final class CloudTranscriber {
         engine?.inputNode.removeTap(onBus: 0); engine?.stop(); engine = nil
         sink?.finish(); sink = nil; sender?.cancel(); sender = nil; receiver?.cancel(); receiver = nil
         socket?.cancel(with: .normalClosure, reason: nil); socket = nil; energy = 0
+        networkSession?.invalidateAndCancel(); networkSession = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
     private func fail(_ message: String) { stop(); onUpdate?(partial, 0, "Disconnected · resume to retry"); onError?(message) }
@@ -196,4 +237,9 @@ final class CloudTranscriber {
         return value
     }
     private func failure(_ message: String) -> NSError { NSError(domain: "LiveCueSpeech", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
+}
+
+private final class SpeechRedirectBlocker: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }

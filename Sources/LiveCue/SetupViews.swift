@@ -36,7 +36,7 @@ struct PairingView: View {
                 if model.relayOnline { Label("PC connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
             }
             }
-            Section("Privacy") { Text("Your pairing is saved in iPhone Keychain and a protected file in this app, excluded from backups. Meta mode sends audio through your PC to Meta. Nemotron and Qwen3 send audio to your PC only. Voz and Parakeet transcribe on this iPhone. Desktop activity stays in memory.") }
+            Section("Privacy") { Text("Your pairing is saved in iPhone Keychain and a protected file in this app, excluded from backups. Meta mode sends audio directly from this iPhone to Meta. Nemotron and Qwen3 send audio to your PC only. Voz and Parakeet transcribe on this iPhone. OpenRouter answers bypass the PC; Codex answers need it. Desktop activity stays in memory.") }
         }
         .navigationTitle(model.isPaired ? "PC connection" : "Pair Windows PC")
         .onAppear { endpoint = model.endpoint }
@@ -61,6 +61,32 @@ struct PairingView: View {
             let value = try PairingPayload.parse(pairingPayload)
             endpoint = value.endpoint; token = value.token; pairingPayload = ""
         } catch { model.errorMessage = error.localizedDescription }
+    }
+}
+
+struct MetaKeyView: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var keyInput = ""
+    @FocusState private var keyFocused: Bool
+    var body: some View {
+        Form {
+            Section("Meta Muse · direct cloud") {
+                SecureField("Paste Meta API key", text: $keyInput).textInputAutocapitalization(.never).autocorrectionDisabled().focused($keyFocused).accessibilityIdentifier("meta-key")
+                Button("Save key") { if model.saveMetaKey(keyInput) { keyInput = ""; keyFocused = false } }.disabled(keyInput.isEmpty || model.isVerifyingMetaKey).accessibilityIdentifier("save-meta-key")
+                Text(model.hasMetaKey ? "Key saved" : "No key saved").accessibilityIdentifier("meta-key-state")
+                if model.hasMetaKey {
+                    Button(model.isVerifyingMetaKey ? "Connecting…" : "Test connection (no audio)") { Task { await model.verifyMetaKey() } }.disabled(model.isVerifyingMetaKey).accessibilityIdentifier("verify-meta-key")
+                    Button("Remove key", role: .destructive) { model.removeMetaKey() }.disabled(model.isVerifyingMetaKey).accessibilityIdentifier("remove-meta-key")
+                }
+                Text(model.metaKeyMessage).font(.caption).accessibilityIdentifier("meta-key-message")
+                Link("Open Meta developer dashboard", destination: URL(string: "https://dev.meta.ai/")!)
+            }.disabled(model.activeSession != nil)
+            Section("How it works") {
+                Text("Your key is stored only in this iPhone's Keychain, not in app source, history, your PC, or GitHub. Audio connects directly to Meta over TLS. The key previously saved on Windows is not automatically copied; paste your Meta key here once.")
+                Text("For a completely PC-free conversation, also choose OpenRouter in Assistant models & timing and save its key. Codex CLI and PC-local speech still need the PC.")
+                Text("Testing connects to Meta but sends no microphone audio. Actual transcription is billable. Disconnections pause recording; there are no automatic paid retries or fallback providers.")
+            }.font(.caption).foregroundStyle(.secondary)
+        }.navigationTitle("Meta API key").navigationBarTitleDisplayMode(.inline)
     }
 }
 

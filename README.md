@@ -1,12 +1,22 @@
 # LiveCue
 
+## 0.5.7 — cloud services directly from iPhone
+
+Meta Muse now streams audio **directly from iPhone to Meta**, not through Windows. In **Transcription settings → Meta API key**, paste your Meta key once, save it to iPhone Keychain, and optionally test the connection without sending microphone audio. Windows credentials are not automatically copied. Keys are masked, excluded from settings/history/source, and used only at the fixed TLS provider destination; redirects are rejected. Authentication errors never display raw provider responses. Removing the key prevents new Meta streams.
+
+For a completely PC-free workflow, choose **Meta Muse · cloud** for transcription and **OpenRouter · direct** for answers, and save both keys on iPhone. The app does not contact the saved PC while this setup is selected. Home shows Meta key readiness and that Windows is not required. Audio is processed by Meta's cloud; Assist text is processed by the chosen OpenRouter service—not by an on-device model. Transcription estimates and reported audio usage still update in conversation/history. Disconnections pause recording with no automatic paid retry or provider fallback.
+
+Nemotron/Qwen3 remain PC-local speech routes; Codex CLI answers still need Windows. Voz/Parakeet remain fully on-iPhone speech models. You can mix these independently. Pairing and existing histories are preserved. The old relay Meta route remains compatible with older phone versions, but this version never uses it; any existing Windows credential stays untouched.
+
+Simulator tests use synthetic credentials and cloud responses and do not make paid transcription/inference requests. Actual microphone performance, provider-key access, and LiveContainer Keychain behavior require a physical-iPhone check.
+
 ## 0.5.6 — direct OpenRouter answers
 
 In **Assistant models & timing → Provider**, choose **OpenRouter · direct**, paste your API key into the masked field, tap **Save key**, optionally verify it without an inference request, and choose a model from the searchable catalog. Each Assist calls the selected model directly from the iPhone. Keys stay in iPhone Keychain, never in source, history or the PC relay. Removing the key stops access; there is no automatic switch to Codex, model fallback or paid retry. Stopping a session does not send an OpenRouter summary request. PC and OpenRouter selections are saved separately.
 
 OpenRouter charges are separate from a ChatGPT subscription. Run details save provider-reported request cost in credits and token usage when available; missing usage is not treated as free. Model-picker prices are current catalog prices per million tokens, not an exact request quote. Provider-default reasoning is used on this route.
 
-OpenRouter replaces the **answer** service, not transcription. Nemotron/Qwen3 still need the Windows GPU service; Meta still streams through the PC. Choose Parakeet or Voz on iPhone for a workflow with no PC dependency. Transcripts and rolling memory go to OpenRouter and its selected model provider on Assist, subject to their policies.
+OpenRouter replaces the **answer** service, not transcription. Nemotron/Qwen3 still need the Windows GPU service; Meta now connects directly from iPhone. Choose Meta, Parakeet or Voz alongside OpenRouter for a workflow with no PC dependency. Transcripts and rolling memory go to OpenRouter and its selected model provider on Assist, subject to their policies.
 
 The PC catalog now queries `model/list` from the same current Codex executable used for answers, with a coalesced five-minute in-memory cache and last-good recovery. It no longer trusts the shared `models_cache.json`, which unrelated older CLI clients can overwrite. This addresses the repeated Luna/Low catalog rejection without silently changing model selection.
 
@@ -28,15 +38,15 @@ The conversation counter updates once per second and History saves a **transcrip
 
 Keep development versions below 1.0 and use patch increments for iterations (0.5.1, 0.5.2, ...). Only move to 1.0 with the owner's explicit approval. Build numbers may increase independently. The release workflow checks that its tag matches the IPA version.
 
-LiveCue is a personal iPhone conversation assistant with public source and a private Windows relay. Midnight Mint uses 16-point default body text (scaling with iOS Dynamic Type). **Meta Muse** streams live captions through your PC; **Voz on Assist** and **Live Parakeet** remain available under Settings as on-device alternatives. Assist sends the current text context to Codex CLI on your Windows PC.
+LiveCue is a personal iPhone conversation assistant with public source and an optional private Windows relay. Midnight Mint uses 16-point default body text (scaling with iOS Dynamic Type). **Meta Muse** streams directly to the cloud; **Voz on Assist** and **Live Parakeet** remain available under Settings as on-device alternatives. Assist sends text to your selected answer service: Codex CLI on Windows or OpenRouter directly.
 
 Requires iOS 18 or later. End the current conversation before changing transcription provider. Local models require preparation; Meta needs no model download. Cloud shows first partial timing from stream start, which includes time spent speaking, not isolated inference latency. Simulator UI tests use fixtures; microphone hardware and actual latency require iPhone testing.
 
 ## Privacy and consent
 
-Obtain informed consent before recording. Audio is not saved by LiveCue. In Meta mode it streams to Meta and incurs provider charges; local modes keep audio on the phone. Transcripts, answers and notes persist on the iPhone until deleted. Desktop shows conversation text in bounded memory, not disk logs. Provider processing is subject to Meta's terms; this is not a claim of zero provider retention.
+Obtain informed consent before recording. Audio is not saved by LiveCue. Meta mode sends audio directly to Meta and incurs provider charges. Nemotron/Qwen3 send audio to your PC; Voz/Parakeet keep it on the phone. Transcripts, answers and notes persist on the iPhone until deleted. Desktop shows PC-routed conversation text in bounded memory, not disk logs. Provider processing is subject to the respective services' terms; this is not a claim of zero provider retention.
 
-The Meta key is never in the phone app or GitHub. Windows launchers decrypt a CurrentUser DPAPI credential at `%LOCALAPPDATA%/LiveCue/meta-stt-key.xml` into only the relay child's environment. That file must be a `PSCredential` exported with `Export-Clixml` by the same Windows user; restrict its ACL to that user. No credentials are required for GitHub builds. Codex subprocesses do not inherit the Meta key. The native phone uses its existing Keychain pairing token over Tailscale WSS. The relay restricts cloud connections to one at a time, fixed PCM/model/endpoint, bounded buffers, idle timeout and 30-minute sessions. Pause/resume starts a fresh cloud stream; disconnections do not automatically retry billable requests. These are application limits, not a provider spending cap.
+Meta and OpenRouter keys entered by the owner stay in iPhone Keychain; no credentials are required for GitHub builds. The app keeps each key separate and sends it only to that provider. Phone audio uses bounded buffers and 80 ms PCM frames. Pause/resume starts a fresh cloud stream; disconnections do not automatically retry billable requests. These are application limits, not a provider spending cap. For older phones only, Windows can still decrypt its existing CurrentUser DPAPI Meta credential into the relay environment; Codex subprocesses do not inherit that key. This release's Meta route never accesses the relay credential.
 
 ## First-time Windows setup
 
@@ -45,7 +55,7 @@ The Meta key is never in the phone app or GitHub. Windows launchers decrypt a Cu
 3. In `Relay`, run `npm install` once.
 4. Double-click **LiveCue Desktop.cmd**, then click **Start relay**. Close an old relay terminal first if one is running. The desktop checks Codex/Tailscale and displays the PC endpoint.
 5. Click **Generate new pairing QR** if needed (this invalidates old pairing), then on iPhone open **Pair Windows PC → Scan PC QR code → Verify and pair**. Camera denial has a manual JSON fallback using the terminal launcher.
-6. Start a conversation for Meta live captions (requires the PC credential above). For local alternatives, select the provider in Settings, then prepare it in Model Library.
+6. For Meta live captions, save a Meta key in the phone's Transcription settings. PC-local models have Start/Stop controls in Settings; on-iPhone models need preparation in Model Library. Windows setup is unnecessary for Meta plus OpenRouter.
 
 The relay binds only to `127.0.0.1`; `tailscale serve` exposes it as private HTTPS inside the tailnet. To rotate the pairing token, use the desktop pairing button or run `./Start-LiveCueRelay.ps1 -ResetPairing`.
 

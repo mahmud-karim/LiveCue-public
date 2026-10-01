@@ -28,7 +28,7 @@ struct AssistantLabView: View {
                     }
                     Text(model.openRouterKeyMessage).font(.caption)
                     Link("Get an OpenRouter API key", destination: URL(string: "https://openrouter.ai/keys")!)
-                    Text("Stored only in this iPhone's Keychain and sent directly to OpenRouter—not your PC or GitHub. Each Assist sends transcript context and can incur API charges. Stop does not make another paid request. PC speech models still need the PC; on-iPhone transcription does not.").font(.caption).foregroundStyle(.secondary)
+                    Text("Stored only in this iPhone's Keychain and sent directly to OpenRouter—not your PC or GitHub. Each Assist sends transcript context and can incur API charges. Stop does not make another paid request. Meta cloud and on-iPhone transcription do not need a PC; PC speech models still do.").font(.caption).foregroundStyle(.secondary)
                 }.disabled(model.isAssisting)
             }
             Section(model.assistantConfiguration.provider == .codex ? "PC assistant" : "OpenRouter assistant") {

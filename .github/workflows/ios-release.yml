@@ -6,7 +6,7 @@ on:
       release_tag:
         description: Release tag to create
         required: true
-        default: v0.5.6
+        default: v0.5.7
       reuse_simulator_run:
         description: Optional passing simulator run from the last 24h; only bundle-version metadata repairs may reuse it
         required: false

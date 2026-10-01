@@ -44,11 +44,43 @@ final class AppModel: ObservableObject {
     @Published private(set) var isVerifyingOpenRouterKey = false
     private let openRouter = OpenRouterClient()
     private var openRouterKeyAccount: String { isUITesting ? "openrouter-api-key-ui-test" : "openrouter-api-key" }
+    @Published private(set) var hasMetaKey = false
+    @Published private(set) var metaKeyMessage = ""
+    @Published private(set) var isVerifyingMetaKey = false
+    private var metaKeyAccount: String { isUITesting ? "meta-api-key-ui-test" : "meta-api-key" }
+    var speechReady: Bool {
+        if speechProvider.isCloud { return hasMetaKey }
+        return speechProvider.isPCLocal ? pcModelCanStart : selectedModel != nil
+    }
     var needsPC: Bool { speechProvider.usesPC || assistantConfiguration.provider == .codex }
     var systemReady: Bool {
-        let speechReady = speechProvider.isPCLocal ? pcModelCanStart : speechProvider.usesPC ? relayOnline : selectedModel != nil
         let answerReady = assistantConfiguration.provider == .codex ? relayOnline : hasOpenRouterKey && !assistantConfiguration.model.isEmpty
         return speechReady && answerReady
+    }
+    @discardableResult func saveMetaKey(_ raw: String) -> Bool {
+        guard activeSession == nil else { return false }
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            _ = try MetaRealtimeAPI.handshake(key: key)
+            try KeychainStore.set(key, account: metaKeyAccount)
+            hasMetaKey = true; metaKeyMessage = "Key saved securely on this iPhone. Meta connects directly; no PC needed."
+            return true
+        } catch {
+            metaKeyMessage = error is MetaSpeechError ? error.localizedDescription : "Could not save the key in Keychain (status \((error as NSError).code)). No insecure fallback was used."
+            return false
+        }
+    }
+    func removeMetaKey() {
+        guard activeSession == nil, !isVerifyingMetaKey else { return }
+        do { try KeychainStore.delete(account: metaKeyAccount); hasMetaKey = false; metaKeyMessage = "Key removed." }
+        catch { metaKeyMessage = "Keychain could not remove this key (status \((error as NSError).code)). Try again." }
+    }
+    func verifyMetaKey() async {
+        guard activeSession == nil, !isVerifyingMetaKey else { return }
+        guard let key = KeychainStore.get(account: metaKeyAccount) else { metaKeyMessage = MetaSpeechError.missingKey.localizedDescription; return }
+        isVerifyingMetaKey = true; defer { isVerifyingMetaKey = false }
+        do { if !isUITesting { try await CloudTranscriber.verifyMetaKey(key) }; metaKeyMessage = "Meta connection verified directly. No microphone audio was sent." }
+        catch { metaKeyMessage = error.localizedDescription }
     }
     func selectAssistantProvider(_ provider: AssistantProvider) {
         guard !isAssisting, provider != assistantConfiguration.provider else { return }
@@ -189,7 +221,7 @@ final class AppModel: ObservableObject {
         repository = try! SessionRepository(inMemory: ProcessInfo.processInfo.arguments.contains("-ui-testing"))
         sessions = repository.all()
         transcriber.onFinalSegments = { [weak self] segments in self?.append(segments) }
-        transcriber.onError = { [weak self] message in self?.errorMessage = message; if self?.speechProvider.usesPC == true { self?.isPaused = true } }
+        transcriber.onError = { [weak self] message in self?.errorMessage = message; if self?.speechProvider.streamsAudio == true { self?.isPaused = true } }
         transcriberObservation = transcriber.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         selectedModelVariant = nil
         if isUITesting {
@@ -210,6 +242,11 @@ final class AppModel: ObservableObject {
             relayOnline = true
         }
         if isUITesting && ProcessInfo.processInfo.arguments.contains("-openrouter-ui-reset") { KeychainStore.remove(account: openRouterKeyAccount) }
+        if isUITesting {
+            if ProcessInfo.processInfo.arguments.contains("-meta-no-key") { KeychainStore.remove(account: metaKeyAccount) }
+            else if !ProcessInfo.processInfo.arguments.contains("-meta-key-persistence") { try? KeychainStore.set("synthetic-meta-test-key", account: metaKeyAccount) }
+        }
+        hasMetaKey = KeychainStore.get(account: metaKeyAccount) != nil
         hasOpenRouterKey = KeychainStore.get(account: openRouterKeyAccount) != nil
         if let savedPairing, !isUITesting || ProcessInfo.processInfo.arguments.contains("-pairing-persistence-test") { endpoint = savedPairing.endpoint }
         Task { await checkRelay() }
@@ -232,6 +269,7 @@ final class AppModel: ObservableObject {
     }
 
     func checkRelay() async {
+        guard needsPC else { relayOnline = false; return }
         guard !isCheckingRelay else { return }
         if savedPairing == nil, let restored = pairingStore.load(legacyEndpoint: endpoint) { savedPairing = restored; endpoint = restored.endpoint }
         guard isPaired else { relayOnline = false; return }
@@ -277,7 +315,12 @@ final class AppModel: ObservableObject {
         guard activeSession == nil, !isTransitioning else { return }
         isTransitioning = true
         defer { isTransitioning = false }
-        guard speechProvider.usesPC || selectedModel != nil else { errorMessage = "Choose and download a transcription model first."; return }
+        guard speechProvider.streamsAudio || selectedModel != nil else { errorMessage = "Choose and download a transcription model first."; return }
+        if speechProvider.isCloud {
+            guard let key = KeychainStore.get(account: metaKeyAccount) else { hasMetaKey = false; errorMessage = MetaSpeechError.missingKey.localizedDescription; return }
+            transcriber.useCloud(provider: speechProvider)
+            transcriber.cloudEndpoint = ""; transcriber.cloudToken = ""; transcriber.cloudMetaKey = key; transcriber.cloudOffset = 0
+        }
         if speechProvider.isPCLocal {
             await refreshPCModel()
             guard pcModelCanStart else { errorMessage = "PC speech model: \(pcModelHomeLabel). Open Transcription settings to start it or check its status."; return }
@@ -286,7 +329,7 @@ final class AppModel: ObservableObject {
             guard isPaired else { errorMessage = RelayError.notPaired.localizedDescription; return }
             if !relayOnline { await checkRelay() }
             guard relayOnline, let token else { errorMessage = connectionMessage; return }
-            transcriber.useCloud(provider: speechProvider); transcriber.cloudEndpoint = endpoint; transcriber.cloudToken = token; transcriber.cloudOffset = 0
+            transcriber.useCloud(provider: speechProvider); transcriber.cloudEndpoint = endpoint; transcriber.cloudToken = token; transcriber.cloudMetaKey = nil; transcriber.cloudOffset = 0
         }
         let granted: Bool
         if isUITesting { granted = true }
@@ -296,7 +339,7 @@ final class AppModel: ObservableObject {
         transcriber.resetCloudUsage(provider: mode)
         activeSession?.transcriptionUsage = TranscriptionUsage(provider: mode)
         fixtureUsage = TranscriptionUsage(provider: mode); fixtureStream = UUID(); fixtureStreamSeconds = 0
-        if isUITesting && speechProvider.usesPC { fixtureUsage.begin(fixtureStream) }
+        if isUITesting && speechProvider.streamsAudio { fixtureUsage.begin(fixtureStream) }
         latestAnswer = nil
         lastAssistRequest = nil
         elapsedSeconds = 0
@@ -401,7 +444,7 @@ final class AppModel: ObservableObject {
         else { fixtureUsage.finish(fixtureStream, completed: true) }
         captureUsage()
         guard var current = activeSession else { return }
-        transcriber.stop(); timer?.invalidate(); isRecording = false; isPaused = false
+        transcriber.stop(); transcriber.cloudMetaKey = nil; timer?.invalidate(); isRecording = false; isPaused = false
         current.endedAt = .now
         current.title = current.segments.first?.text.prefix(48).description ?? "Conversation"
         try? repository.save(current)
@@ -427,7 +470,7 @@ final class AppModel: ObservableObject {
     private func tick() {
         guard activeSession != nil else { return }
         elapsedSeconds += 1
-        if isUITesting, speechProvider.usesPC, !isPaused, !isTransitioning {
+        if isUITesting, speechProvider.streamsAudio, !isPaused, !isTransitioning {
             fixtureStreamSeconds += 1
             fixtureUsage.update(fixtureStream, sentMs: Double(fixtureStreamSeconds * 1000), processedMs: Double(fixtureStreamSeconds * 1000), hasTranscript: true)
             transcriber.energy = Float(0.025 + 0.02 * sin(Double(elapsedSeconds)))
@@ -437,7 +480,7 @@ final class AppModel: ObservableObject {
 
     private func captureUsage() {
         guard var current = activeSession else { return }
-        if speechProvider.usesPC { current.transcriptionUsage = isUITesting ? fixtureUsage : transcriber.cloudUsage }
+        if speechProvider.streamsAudio { current.transcriptionUsage = isUITesting ? fixtureUsage : transcriber.cloudUsage }
         activeSession = current
         try? repository.save(current)
     }
@@ -445,7 +488,7 @@ final class AppModel: ObservableObject {
     private func append(_ segments: [TranscriptSegment]) {
         guard var current = activeSession else { return }
         current.segments.append(contentsOf: segments)
-        if speechProvider.usesPC { current.segments.sort { $0.startSeconds < $1.startSeconds } }
+        if speechProvider.streamsAudio { current.segments.sort { $0.startSeconds < $1.startSeconds } }
         activeSession = current
         try? repository.save(current)
     }

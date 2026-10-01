@@ -60,7 +60,7 @@ struct HomeView: View {
                 Text("A clearer conversation.").font(.system(size: compact ? 17 : 20)).foregroundStyle(.secondary)
                 Text((model.mode == "meta" ? "Live captions with Meta Muse." : model.speechProvider.isPCLocal ? "Live captions on your PC's GPU." : "Transcription on your iPhone.") + "\nTap Assist for an answer from " + (model.assistantConfiguration.provider == .codex ? "your PC." : "OpenRouter."))
                     .font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                Label(!model.needsPC ? "OpenRouter direct" : model.relayOnline ? "PC online" : model.isPaired ? "PC reconnecting" : "PC offline", systemImage: "circle.fill")
+                Label(!model.needsPC ? (model.speechProvider.isCloud ? "Cloud direct · no PC" : "OpenRouter direct") : model.relayOnline ? "PC online" : model.isPaired ? "PC reconnecting" : "PC offline", systemImage: "circle.fill")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(!model.needsPC || model.relayOnline ? MintTheme.mint : .orange)
                     .padding(.horizontal, 16).padding(.vertical, 7).background(MintTheme.teal.opacity(0.55), in: Capsule())
             }
@@ -73,10 +73,14 @@ struct HomeView: View {
                 }
                 HStack {
                     Label("Transcription", systemImage: "waveform"); Spacer()
-                    Text(model.speechProvider.usesPC ? model.speechProvider.name : model.selectedModel?.displayName ?? "Not configured").foregroundStyle(.secondary)
+                    Text(model.speechProvider.streamsAudio ? model.speechProvider.name : model.selectedModel?.displayName ?? "Not configured").foregroundStyle(.secondary)
                 }.font(.system(size: 13))
                 Divider().overlay(MintTheme.mint.opacity(0.08))
                 HStack { Label("Windows relay", systemImage: "desktopcomputer"); Spacer(); Text(!model.needsPC ? "Not required" : model.isPaired ? "Paired" : "Pairing required").foregroundStyle(.secondary) }.font(.system(size: 13))
+                if model.speechProvider.isCloud {
+                    HStack { Label("Meta connection", systemImage: "key.fill"); Spacer(); Text(model.hasMetaKey ? "Key saved · direct" : "Add API key").foregroundStyle(model.hasMetaKey ? MintTheme.mint : .orange) }
+                        .font(.system(size: 12)).accessibilityIdentifier("home-meta-state")
+                }
                 if model.speechProvider.isPCLocal {
                     Divider().overlay(MintTheme.mint.opacity(0.08))
                     HStack(spacing: 7) {
@@ -90,12 +94,12 @@ struct HomeView: View {
                 }
             }.padding(compact ? 12 : 15).glowPanel()
             VStack(spacing: compact ? 8 : 10) {
-                NavigationLink { PairingView() } label: { SetupRow(icon: "desktopcomputer", title: model.isPaired ? "PC connection" : "Pair Windows PC", detail: model.isPaired ? (model.relayOnline ? "Saved · connected" : "Saved · reconnecting") : "Required", compact: compact) }.accessibilityIdentifier("pair-pc")
+                NavigationLink { PairingView() } label: { SetupRow(icon: "desktopcomputer", title: model.isPaired ? "PC connection" : "Pair Windows PC", detail: !model.needsPC ? "Optional for current setup" : model.isPaired ? (model.relayOnline ? "Saved · connected" : "Saved · reconnecting") : "Required", compact: compact) }.accessibilityIdentifier("pair-pc")
                 NavigationLink { SettingsView() } label: { SetupRow(icon: "waveform", title: "Transcription & appearance", detail: model.speechProvider.isPCLocal ? model.pcModelHomeLabel : "Cloud, PC or iPhone speech", compact: compact) }.accessibilityIdentifier("transcription-settings")
                 NavigationLink { AssistantLabView() } label: { SetupRow(icon: "slider.horizontal.3", title: "Assistant models & timing", detail: model.assistantConfiguration.model.isEmpty ? "Choose an OpenRouter model" : model.assistantConfiguration.model, compact: compact) }.accessibilityIdentifier("assistant-lab")
             }
             Spacer(minLength: 0)
-            if !model.speechProvider.usesPC && model.selectedModel == nil {
+            if !model.speechProvider.streamsAudio && model.selectedModel == nil {
                 NavigationLink { ModelLibraryView() } label: { Label("Download a transcription model", systemImage: "arrow.down.circle.fill").frame(maxWidth: .infinity) }
                     .buttonStyle(MintActionStyle()).accessibilityIdentifier("download-model")
             } else {

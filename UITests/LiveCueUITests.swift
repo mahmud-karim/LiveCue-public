@@ -1,6 +1,52 @@
 import XCTest
 
 final class LiveCueUITests: XCTestCase {
+    func testMetaKeyPersistsAndAllCloudConversationWorksWithoutPC() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-meta-no-key", "-pc-offline", "-openrouter-ui-reset"]
+        app.launch(); app.buttons["start-session"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Meta API key")).firstMatch.exists)
+        app.alerts.buttons["OK"].tap()
+        app.tabBars.buttons["Settings"].tap(); app.buttons["meta-key-settings"].tap()
+        XCTAssertEqual(app.staticTexts["meta-key-state"].label, "No key saved")
+        app.secureTextFields["meta-key"].tap(); app.secureTextFields["meta-key"].typeText("synthetic-mobile-meta-key")
+        app.buttons["save-meta-key"].tap()
+        XCTAssertEqual(app.staticTexts["meta-key-state"].label, "Key saved")
+        app.buttons["verify-meta-key"].tap()
+        XCTAssertTrue(app.staticTexts["meta-key-message"].label.contains("No microphone audio"))
+        XCTAssertFalse(app.staticTexts["synthetic-mobile-meta-key"].exists)
+        let keyShot = XCTAttachment(screenshot: app.screenshot()); keyShot.name = "Meta direct Keychain setup - secret hidden"; keyShot.lifetime = .keepAlways; add(keyShot)
+        app.navigationBars.buttons.element(boundBy: 0).tap(); app.tabBars.buttons["Live"].tap()
+        app.buttons["assistant-lab"].tap(); app.buttons["assistant-provider"].tap(); app.buttons["assistant-provider-openrouter"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.secureTextFields["openrouter-key"].tap(); app.secureTextFields["openrouter-key"].typeText("synthetic-cloud-answer-key")
+        app.buttons["save-openrouter-key"].tap(); app.swipeUp(); app.buttons["openrouter-model-picker"].tap(); app.buttons["choose-test/direct"].tap()
+        app.terminate()
+        app.launchArguments = ["-ui-testing", "-meta-key-persistence", "-openrouter-persistence-test", "-pc-offline"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Cloud direct · no PC"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["download-model"].exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Key saved · direct")).firstMatch.exists)
+        let home = XCTAttachment(screenshot: app.screenshot()); home.name = "All cloud home - PC offline"; home.lifetime = .keepAlways; add(home)
+        app.buttons["start-session"].tap()
+        XCTAssertTrue(app.staticTexts["live-transcription-cost"].waitForExistence(timeout: 5))
+        for _ in 0..<3 {
+            app.buttons["assist-button"].tap()
+            XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 10)); XCTAssertEqual(app.alerts.count, 0)
+            app.buttons["dismiss-answer"].tap()
+        }
+        app.buttons["pause-session"].tap(); XCTAssertTrue(app.staticTexts["Paused"].waitForExistence(timeout: 5))
+        app.buttons["pause-session"].tap(); XCTAssertTrue(app.staticTexts["Listening"].waitForExistence(timeout: 5))
+        let live = XCTAttachment(screenshot: app.screenshot()); live.name = "All cloud captions and Assist - PC offline"; live.lifetime = .keepAlways; add(live)
+        app.buttons["end-session"].tap(); app.tabBars.buttons["History"].tap()
+        XCTAssertTrue(app.staticTexts["history-transcription-cost"].firstMatch.waitForExistence(timeout: 5))
+        app.tabBars.buttons["Settings"].tap(); app.buttons["meta-key-settings"].tap()
+        XCTAssertEqual(app.staticTexts["meta-key-state"].label, "Key saved")
+        app.buttons["remove-meta-key"].tap(); XCTAssertEqual(app.staticTexts["meta-key-state"].label, "No key saved")
+        app.navigationBars.buttons.element(boundBy: 0).tap(); app.tabBars.buttons["Live"].tap(); app.buttons["start-session"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+    }
     func testDirectOpenRouterKeyPersistenceAndThreeAssistsWithoutPC() {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-openrouter-ui-reset", "-on-device-ready", "-pc-offline", "-pc-catalog-slow"]
@@ -230,7 +276,7 @@ final class LiveCueUITests: XCTestCase {
     func testMintSettingsAndCloudDisclosure() {
         let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
         app.tabBars.buttons["Settings"].tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Audio streams through your PC to Meta")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Audio streams directly from this iPhone to Meta")).firstMatch.exists)
         app.swipeUp()
         XCTAssertTrue(app.staticTexts["Midnight Mint"].exists || app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Midnight Mint")).firstMatch.exists)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Midnight Mint Settings"; shot.lifetime = .keepAlways; add(shot)

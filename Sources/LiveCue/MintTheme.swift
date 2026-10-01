@@ -21,12 +21,15 @@ struct SettingsView: View {
                 NavigationLink { SpeechProviderView() } label: {
                     LabeledContent("Transcription", value: model.speechProvider.name)
                 }.disabled(model.activeSession != nil || model.isPreparing || model.isControllingPCModel || model.pcModelStatus?.isChanging == true).accessibilityIdentifier("speech-provider")
-                if !model.speechProvider.usesPC {
+                if !model.speechProvider.streamsAudio {
                     NavigationLink("Model Library") { ModelLibraryView() }
                     NavigationLink("Speech benchmark") { ModelLabView() }
                 }
                 NavigationLink { AssistantLabView() } label: { Label("Assistant models & timing", systemImage: "slider.horizontal.3") }.accessibilityIdentifier("assistant-lab")
-                Text(model.mode == "meta" ? "Audio streams through your PC to Meta. No model download. Cloud usage is billed by Meta. Recording stops if the connection fails; resume to reconnect." : model.speechProvider.isPCLocal ? "Audio streams to the model on your PC's GPU. No speech API charges. Keep Docker Desktop and LiveCue Desktop running. Switching models may take a minute; recording starts only when ready." : "Audio is transcribed on this iPhone. Only text is sent to " + (model.assistantConfiguration.provider == .codex ? "your PC." : "OpenRouter when you tap Assist.")).font(.system(size: 13)).foregroundStyle(.secondary)
+                Text(model.mode == "meta" ? "Audio streams directly from this iPhone to Meta. No PC or model download. Cloud usage is billed by Meta. Recording stops if the connection fails; resume to reconnect." : model.speechProvider.isPCLocal ? "Audio streams to the model on your PC's GPU. No speech API charges. Keep Docker Desktop and LiveCue Desktop running. Switching models may take a minute; recording starts only when ready." : "Audio is transcribed on this iPhone. Only text is sent to " + (model.assistantConfiguration.provider == .codex ? "your PC." : "OpenRouter when you tap Assist.")).font(.system(size: 13)).foregroundStyle(.secondary)
+                if model.speechProvider.isCloud {
+                    NavigationLink { MetaKeyView() } label: { LabeledContent("Meta API key", value: model.hasMetaKey ? "Saved on iPhone" : "Required") }.accessibilityIdentifier("meta-key-settings")
+                }
             }
             if model.speechProvider.isPCLocal { PCModelControls() }
             Section("Assistant instructions") {
@@ -50,7 +53,7 @@ struct SettingsView: View {
                 NavigationLink { PairingView() } label: { Label("Pair Windows PC", systemImage: "desktopcomputer") }.accessibilityIdentifier("pair-pc")
             }
             Section("Privacy") {
-                Text("The Meta API key stays encrypted on your Windows PC and is never sent to this iPhone. Your PC pairing is saved in Keychain and a protected app file excluded from backups. Live audio is not saved by the relay; transcripts and replies appear in desktop memory and are saved in your iPhone history. Obtain permission before recording others.").font(.system(size: 13)).foregroundStyle(.secondary)
+                Text("Meta and OpenRouter API keys stay in this iPhone's Keychain and go only to their respective services. Cloud audio goes directly to Meta; cloud Assist text goes directly to OpenRouter. PC-local speech and Codex Assist still use your paired PC. Transcripts and replies are saved in iPhone history. Obtain permission before recording others.").font(.system(size: 13)).foregroundStyle(.secondary)
             }
         }.scrollContentBackground(.hidden).background(MintTheme.background).navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
             .toolbar {
