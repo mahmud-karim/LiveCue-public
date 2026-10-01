@@ -131,8 +131,9 @@ final class LiveCueUITests: XCTestCase {
         app.swipeDown(); app.buttons["remove-openrouter-key"].tap()
         XCTAssertEqual(app.staticTexts["openrouter-key-state"].label, "No key saved")
         app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["start-session"].tap(); app.buttons["assist-button"].tap()
-        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "OpenRouter API key")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["assist-error"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["assist-error"].label.contains("OpenRouter API key"))
+        XCTAssertEqual(app.alerts.count, 0)
     }
     func testPCModelStartStopInSettings() {
         let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
@@ -289,7 +290,9 @@ final class LiveCueUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["start-session"].waitForExistence(timeout: 10))
         app.buttons["start-session"].tap()
+        app.buttons["expand-transcript"].tap()
         XCTAssertTrue(app.staticTexts["What is the main advantage of local transcription?"].waitForExistence(timeout: 5))
+        app.buttons["expand-transcript"].tap()
         app.buttons["assist-button"].tap()
         XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 10))
         let voz = XCTAttachment(screenshot: app.screenshot())

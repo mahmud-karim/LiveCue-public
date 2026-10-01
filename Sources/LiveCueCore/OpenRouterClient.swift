@@ -26,6 +26,7 @@ public actor OpenRouterClient {
             let configuration = URLSessionConfiguration.ephemeral
             configuration.urlCache = nil; configuration.httpCookieStorage = nil
             configuration.httpShouldSetCookies = false
+            configuration.timeoutIntervalForResource = 120
             self.session = URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
         }
     }
