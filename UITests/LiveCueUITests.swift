@@ -1,6 +1,51 @@
 import XCTest
 
 final class LiveCueUITests: XCTestCase {
+    private func waitForAssistCompletion(_ app: XCUIApplication) {
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["assist-button"])
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+    }
+    func testCaptionStripInlineAnswersExpandTranscriptAndPinnedControls() {
+        let app = XCUIApplication(); app.launchArguments = ["-ui-testing"]; app.launch()
+        app.buttons["start-session"].tap()
+        XCTAssertTrue(app.buttons["expand-transcript"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.scrollViews["live-transcript"].exists)
+        XCTAssertEqual(app.tabBars.count, 0)
+        for index in 0..<3 {
+            app.buttons["assist-button"].tap()
+            waitForAssistCompletion(app)
+            XCTAssertTrue(app.staticTexts["assistant-answer"].exists)
+            XCTAssertEqual(app.staticTexts.matching(identifier: "previous-assistant-answer").count, index)
+            XCTAssertEqual(app.alerts.count, 0); XCTAssertEqual(app.sheets.count, 0)
+            for id in ["assist-button", "pause-session", "end-session"] { XCTAssertTrue(app.buttons[id].isHittable) }
+        }
+        let answerFrame = app.scrollViews["assistant-feed"].frame
+        XCTAssertGreaterThan(answerFrame.height, app.frame.height * 0.5)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "0.5.8 B - inline assistant priority"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["expand-transcript"].tap()
+        XCTAssertTrue(app.scrollViews["live-transcript"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["end-session"].isHittable)
+        app.buttons["expand-transcript"].tap()
+        XCTAssertFalse(app.scrollViews["live-transcript"].exists)
+        app.buttons["end-session"].tap()
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 5))
+    }
+    func testPartialAssistFailureIsInlineAndManualRetryRecovers() {
+        let app = XCUIApplication(); app.launchArguments = ["-ui-testing", "-assist-fails-once"]; app.launch()
+        app.buttons["start-session"].tap(); app.buttons["assist-button"].tap()
+        XCTAssertTrue(app.staticTexts["assist-error"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["streaming-answer"].exists)
+        XCTAssertFalse(app.staticTexts["assistant-answer"].exists)
+        XCTAssertEqual(app.alerts.count, 0); XCTAssertEqual(app.sheets.count, 0)
+        XCTAssertTrue(app.buttons["end-session"].isHittable)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "0.5.8 B - incomplete answer and retry"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["retry-failed-assist"].tap(); waitForAssistCompletion(app)
+        XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["assist-error"].exists)
+        XCTAssertFalse(app.staticTexts["streaming-answer"].exists)
+        XCTAssertEqual(app.staticTexts.matching(identifier: "previous-assistant-answer").count, 0)
+        app.buttons["end-session"].tap()
+    }
     func testMetaKeyPersistsAndAllCloudConversationWorksWithoutPC() {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-meta-no-key", "-pc-offline", "-openrouter-ui-reset"]
@@ -34,7 +79,9 @@ final class LiveCueUITests: XCTestCase {
         for _ in 0..<3 {
             app.buttons["assist-button"].tap()
             XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 10)); XCTAssertEqual(app.alerts.count, 0)
-            app.buttons["dismiss-answer"].tap()
+            waitForAssistCompletion(app)
+            XCTAssertFalse(app.buttons["dismiss-answer"].exists)
+            XCTAssertTrue(app.buttons["end-session"].isHittable)
         }
         app.buttons["pause-session"].tap(); XCTAssertTrue(app.staticTexts["Paused"].waitForExistence(timeout: 5))
         app.buttons["pause-session"].tap(); XCTAssertTrue(app.staticTexts["Listening"].waitForExistence(timeout: 5))
@@ -74,7 +121,9 @@ final class LiveCueUITests: XCTestCase {
         for _ in 0..<3 {
             app.buttons["assist-button"].tap()
             XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 10)); XCTAssertEqual(app.alerts.count, 0)
-            app.buttons["dismiss-answer"].tap()
+            waitForAssistCompletion(app)
+            XCTAssertFalse(app.buttons["dismiss-answer"].exists)
+            XCTAssertTrue(app.buttons["end-session"].isHittable)
         }
         app.buttons["end-session"].tap(); app.buttons["assistant-lab"].tap()
         app.swipeUp()
@@ -157,7 +206,9 @@ final class LiveCueUITests: XCTestCase {
             let live = XCTAttachment(screenshot: app.screenshot()); live.name = provider + " live conversation"; live.lifetime = .keepAlways; add(live)
             app.buttons["assist-button"].tap()
             XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 5))
-            app.buttons["dismiss-answer"].tap()
+            waitForAssistCompletion(app)
+            XCTAssertFalse(app.buttons["dismiss-answer"].exists)
+            XCTAssertTrue(app.buttons["end-session"].isHittable)
             app.buttons["pause-session"].tap()
             XCTAssertTrue(app.staticTexts["Paused"].waitForExistence(timeout: 5))
             app.buttons["end-session"].tap()
@@ -225,6 +276,10 @@ final class LiveCueUITests: XCTestCase {
         app.swipeUp()
         XCTAssertTrue(app.buttons["retry-same-text"].exists)
         app.buttons["retry-same-text"].tap()
+        waitForAssistCompletion(app)
+        app.swipeUp()
+        app.buttons["timing-disclosure"].tap()
+        app.swipeUp()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Transcription (reused),")).firstMatch.waitForExistence(timeout: 5))
         let retry = XCTAttachment(screenshot: app.screenshot()); retry.name = "Same-text retry timing"; retry.lifetime = .keepAlways; add(retry)
     }
@@ -239,7 +294,9 @@ final class LiveCueUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["assistant-answer"].waitForExistence(timeout: 10))
         let voz = XCTAttachment(screenshot: app.screenshot())
         voz.name = "Voz on Assist"; voz.lifetime = .keepAlways; add(voz)
-        app.buttons["dismiss-answer"].tap()
+        waitForAssistCompletion(app)
+            XCTAssertFalse(app.buttons["dismiss-answer"].exists)
+            XCTAssertTrue(app.buttons["end-session"].isHittable)
         app.buttons["end-session"].tap()
         XCTAssertTrue(app.buttons["start-session"].waitForExistence(timeout: 5))
         app.tabBars.buttons["History"].tap()

@@ -1,5 +1,13 @@
 # LiveCue
 
+## 0.5.8 — inline Assist-first conversation
+
+Layout B replaces the large conversation hero and answer sheet with a compact listening/status bar, a two-line expandable live-caption strip, and an inline answer feed. The newest answer appears first; previous answers remain readable below. Pause, Assist and Stop stay pinned outside the scrolling content. Body text stays at 16 points, costs remain visible only for cloud transcription, and the small microphone meter reacts to speech.
+
+OpenRouter now requests streamed plain-text answers regardless of the model's structured-output capability. Internal memory/cursor bookkeeping is generated locally, avoiding the schema/UUID mismatch and provider-specific JSON compliance failures. The SSE parser handles keepalive comments, Unicode, multi-line events, content blocks, repeated terminal accounting, and mid-stream errors. Provider reasoning and raw error payloads are not shown. Usage comes from the final accounting frame when supplied; missing cost remains unknown. Requests still use the selected model without automatic retries or model fallback.
+
+Partial output is displayed live. A failed or truncated answer is labelled incomplete and never saved as a completed answer or used to advance conversation context. The inline error offers an explicit same-text retry. Locally maintained context is a bounded recent conversation tail, not a model-generated summary. Simulator provider/transport fixtures test these failure cases without using a personal API key or making paid requests; actual provider access and microphone behavior still need a physical-iPhone check.
+
 ## 0.5.7 — cloud services directly from iPhone
 
 Meta Muse now streams audio **directly from iPhone to Meta**, not through Windows. In **Transcription settings → Meta API key**, paste your Meta key once, save it to iPhone Keychain, and optionally test the connection without sending microphone audio. Windows credentials are not automatically copied. Keys are masked, excluded from settings/history/source, and used only at the fixed TLS provider destination; redirects are rejected. Authentication errors never display raw provider responses. Removing the key prevents new Meta streams.

@@ -8,7 +8,8 @@ private final class RouterProtocol: URLProtocol {
     override func startLoading() {
         do {
             let (status, data) = try Self.handle!(request)
-            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+            let prefix = String(decoding: data.prefix(20), as: UTF8.self)
+            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": prefix.hasPrefix("data:") || prefix.hasPrefix(":") ? "text/event-stream" : "application/json"])!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data); client?.urlProtocolDidFinishLoading(self)
         } catch { client?.urlProtocol(self, didFailWithError: error) }
@@ -50,18 +51,18 @@ final class OpenRouterClientTests: XCTestCase {
         }
         try await client().verifyKey("synthetic-fixture-key")
     }
-    func testThreeConsecutiveStructuredAssistsKeepMemoryAndUsage() async throws {
+    func testThreeConsecutivePlainAssistsKeepLocalMemoryAndUsageWithoutSchema() async throws {
         let cursor = UUID(); var count = 0
         RouterProtocol.handle = { request in
             count += 1
             let body = try JSONSerialization.jsonObject(with: request.httpBody ?? self.readBody(request)) as! [String: Any]
             XCTAssertEqual(body["model"] as? String, "test/structured")
-            XCTAssertNotNil(body["response_format"]); XCTAssertNil(body["models"])
+            XCTAssertNil(body["response_format"]); XCTAssertNil(body["provider"]); XCTAssertNil(body["models"])
+            XCTAssertEqual(body["stream"] as? Bool, true)
             let messages = body["messages"] as! [[String: String]]
             XCTAssertFalse(messages.description.contains("synthetic-fixture-key"))
-            if count > 1 { XCTAssertTrue(messages.description.contains("Remembered context")) }
-            let answer = AssistResponse(detectedQuestion: "Question?", answer: "Answer \(count)", details: "", memory: SessionMemory(summary: "Remembered context", throughSegmentId: UUID()))
-            let content = String(decoding: try JSONEncoder().encode(answer), as: UTF8.self)
+            if count > 1 { XCTAssertTrue(messages.description.contains("Answer 1")) }
+            let content = "Answer \(count)"
             let data = try JSONSerialization.data(withJSONObject: ["id":"generation-test", "model":"test/structured", "choices":[["message":["content":content],"finish_reason":"stop"]],"usage":["prompt_tokens":100,"completion_tokens":20,"cost":0.002]])
             return (200, data)
         }
@@ -73,6 +74,18 @@ final class OpenRouterClientTests: XCTestCase {
             XCTAssertEqual(response.execution?.usage?.costCredits, 0.002); memory = response.memory
         }
         XCTAssertEqual(count, 3)
+    }
+    func testRealStreamingTransportUpdatesTextAndKeepsFinalUsage() async throws {
+        RouterProtocol.handle = { _ in
+            let stream = ": OPENROUTER PROCESSING\n\ndata: {\"id\":\"gen-test\",\"model\":\"test/stream\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello \"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"世界\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"choices\":[],\"usage\":{\"cost\":0.001}}\n\ndata: [DONE]\n\n"
+            return (200, Data(stream.utf8))
+        }
+        let updates = StreamUpdates()
+        let result = try await client().assist(.init(sessionId: UUID(), instruction: nil, memory: .init(), transcript: "Hi", partialTranscript: nil), option: .init(id: "test/stream", name: "Stream", reasoningEfforts: ["default"], structuredOutputs: true), key: "fixture", throughSegmentId: nil) { text in await updates.add(text) }
+        XCTAssertEqual(result.answer, "Hello 世界")
+        XCTAssertEqual(result.execution?.usage?.costCredits, 0.001)
+        let values = await updates.values
+        XCTAssertEqual(values, ["Hello ", "Hello 世界"])
     }
     func testErrorsDoNotLeakKeyOrRetryAndRecoveryWorks() async throws {
         var status = 401; var count = 0
@@ -106,4 +119,9 @@ final class OpenRouterClientTests: XCTestCase {
         while stream.hasBytesAvailable { let n = stream.read(&bytes, maxLength: bytes.count); if n <= 0 { break }; result.append(contentsOf: bytes.prefix(n)) }
         return result
     }
+}
+
+private actor StreamUpdates {
+    var values: [String] = []
+    func add(_ text: String) { values.append(text) }
 }

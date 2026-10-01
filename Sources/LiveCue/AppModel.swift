@@ -16,6 +16,8 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(instruction, forKey: "assistantInstruction") }
     }
     @Published var latestAnswer: AssistantTurn?
+    @Published var streamingAnswer = ""
+    @Published var assistError: String?
     @Published var errorMessage: String?
     @Published var relayOnline = false
     @Published private(set) var connectionMessage = ""
@@ -162,6 +164,7 @@ final class AppModel: ObservableObject {
         } catch { pcModelMessage = ConnectionMessage.describe(error, saved: isPaired) }
     }
     @Published private(set) var lastAssistRequest: AssistRequest?
+    private var lastAssistThroughSegmentId: UUID?
     var comparisonTurns: [AssistantTurn] {
         ((activeSession?.assistantTurns ?? []) + sessions.filter { $0.id != activeSession?.id }.flatMap(\.assistantTurns))
             .filter { $0.performance != nil }.sorted { $0.createdAt > $1.createdAt }
@@ -341,7 +344,9 @@ final class AppModel: ObservableObject {
         fixtureUsage = TranscriptionUsage(provider: mode); fixtureStream = UUID(); fixtureStreamSeconds = 0
         if isUITesting && speechProvider.streamsAudio { fixtureUsage.begin(fixtureStream) }
         latestAnswer = nil
+        streamingAnswer = ""; assistError = nil
         lastAssistRequest = nil
+        lastAssistThroughSegmentId = nil
         elapsedSeconds = 0
         isRecording = true
         isPaused = false
@@ -374,9 +379,10 @@ final class AppModel: ObservableObject {
 
     func assist(reuseText: Bool = false) async {
         guard activeSession != nil, !isAssisting, !isTransitioning else { return }
+        assistError = nil; streamingAnswer = ""
         let token = token ?? (isUITesting ? "test" : nil)
-        if assistantConfiguration.provider == .codex && token == nil { errorMessage = RelayError.notPaired.localizedDescription; return }
-        if assistantConfiguration.provider == .openrouter && !hasOpenRouterKey { errorMessage = OpenRouterError.missingKey.localizedDescription; return }
+        if assistantConfiguration.provider == .codex && token == nil { assistError = RelayError.notPaired.localizedDescription; return }
+        if assistantConfiguration.provider == .openrouter && !hasOpenRouterKey { assistError = OpenRouterError.missingKey.localizedDescription; return }
         isAssisting = true
         let totalStarted = ProcessInfo.processInfo.systemUptime
         let configuration = assistantConfiguration
@@ -392,7 +398,7 @@ final class AppModel: ObservableObject {
             request.requestId = UUID()
             request.assistant = configuration
             guard !request.transcript.isEmpty || !(request.partialTranscript ?? "").isEmpty else {
-                errorMessage = "No speech was recognized yet."; return
+                assistError = "No speech was recognized yet."; return
             }
             // Refresh before sending text, but never silently switch the user's model.
             assistStage = "Checking model…"
@@ -406,16 +412,28 @@ final class AppModel: ObservableObject {
             }
             assistStage = "Thinking…"
             lastAssistRequest = request
+            if !reuseText { lastAssistThroughSegmentId = current.segments.last?.id }
             let contextMs = (ProcessInfo.processInfo.systemUptime - contextStarted) * 1000
             let roundTripStarted = ProcessInfo.processInfo.systemUptime
             var response: AssistResponse
             if isUITesting {
+                if ProcessInfo.processInfo.arguments.contains("-assist-fails-once"), current.assistantTurns.isEmpty, !reuseText {
+                    streamingAnswer = "A partial answer that must not be saved as complete."
+                    throw OpenRouterError.unavailable
+                }
                 response = AssistResponse(detectedQuestion: "What is the main advantage of local transcription?", answer: "Your audio stays on the iPhone, which improves privacy and keeps transcription working without a cloud speech service.", details: "Only the text context is sent through your private Tailscale connection to the Codex relay on your PC.", memory: SessionMemory(summary: "Discussing local transcription privacy.", throughSegmentId: current.segments.last?.id))
                 response.execution = RelayExecution(model: configuration.model, reasoningEffort: configuration.reasoningEffort, codexMs: 600, relayTotalMs: 620, requestReadMs: 2, relayOverheadMs: 20)
                 if configuration.provider == .openrouter { response.execution?.usage = AssistantUsage(promptTokens: 120, completionTokens: 40, costCredits: 0.0001) }
+                streamingAnswer = "Your audio stays on the iPhone,"
+                try await Task.sleep(for: .milliseconds(400))
             } else if configuration.provider == .openrouter {
                 guard let key = KeychainStore.get(account: openRouterKeyAccount) else { throw OpenRouterError.missingKey }
-                response = try await openRouter.assist(request, option: option, key: key, throughSegmentId: current.segments.last?.id)
+                response = try await openRouter.assist(request, option: option, key: key, throughSegmentId: lastAssistThroughSegmentId) { [weak self] text in
+                    await MainActor.run {
+                        guard self?.activeSession?.id == current.id else { return }
+                        self?.streamingAnswer = text; self?.assistStage = "Replying…"
+                    }
+                }
             } else { response = try await relay.assist(request, endpoint: endpoint, token: token!) }
             if configuration.provider == .codex {
               guard let execution = response.execution,
@@ -432,8 +450,9 @@ final class AppModel: ObservableObject {
             latest.memory = response.memory
             activeSession = latest
             latestAnswer = turn
+            streamingAnswer = ""
             try repository.save(latest)
-        } catch { errorMessage = error.localizedDescription }
+        } catch { assistError = error.localizedDescription }
     }
 
     func endSession() async {
